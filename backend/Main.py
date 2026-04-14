@@ -19,21 +19,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ---------------------------------------------------------------------------
-# Startup
-# ---------------------------------------------------------------------------
-
 @app.on_event("startup")
 def on_startup():
     """Ensure MongoDB indexes exist on first boot."""
     init_indexes()
     print("[OK] MongoDB indexes initialized.")
 
-
-# ---------------------------------------------------------------------------
-# Models
-# ---------------------------------------------------------------------------
 
 class DecodeRequest(BaseModel):
     tx_hash: str
@@ -45,11 +36,7 @@ class DecodeResponse(BaseModel):
     risk_level: str
     summary: str
 
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
+#route
 @app.get("/")
 def root():
     return {"message": "Server is running!"}
