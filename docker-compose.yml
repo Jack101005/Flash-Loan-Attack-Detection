@@ -2,6 +2,9 @@ services:
   zookeeper:
     restart: always
     image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
     expose:
       - 2181
     networks:
@@ -11,7 +14,12 @@ services:
     restart: always
     image: confluentinc/cp-kafka:7.6.1
     environment:
+      KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 1
+      KAFKA_LOG_RETENTION_BYTES: 536870912
     ports:
       - "9092:9092"
       - "9101:9101"
@@ -22,21 +30,19 @@ services:
     image: redis:7.2-alpine
     ports:
       - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASS} --maxmemory 256mb --maxmemory-policy allkeys-lru
     networks:
       - db_net
-
-  mongodb:
-    restart: always
-    image: mongo:7.0
-    volumes:
-      - mongo_data:/data/db
-    networks:
-      - db_net
-    ports:
-      - "27017:27017"
 
   spark_master:
-    image: bitnami/spark:3.5.1
+    image: apache/spark:3.5.0
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: no
+      SPARK_RPC_ENCRYPTION_ENABLED: no
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no
+      SPARK_SSL_ENABLED: no
+      SPARK_USER: spark
     ports:
       - "8080:8080"
     expose:
@@ -45,37 +51,38 @@ services:
       - broker_net
 
   spark_worker:
-    image: bitnami/spark:3.5.1
+    image: apache/spark:3.5.0
     environment:
-      SPARK_MASTER_URL: spark://spark_master:7077
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark:7077
+      SPARK_WORKER_MEMORY: 1G
+      SPARK_WORKER_CORES: 1
+      SPARK_RPC_AUTHENTICATION_ENABLED: no
+      SPARK_RPC_ENCRYPTION_ENABLED: no
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no
+      SPARK_SSL_ENABLED: no
+      SPARK_USER: spark
+    volumes:
+      - spark_checkpoint:/tmp/spark_checkpoint
     expose:
       - 8081
     networks:
       - broker_net
 
-  ingestion:
-    build: 
-      context: ./ingestion
-      dockerfile: Dockerfile
-    networks:
-      - broker_net
+  # ingestion:
+  #   build: 
+  #     context: ./ingestion
+  #     dockerfile: Dockerfile
+  #   networks:
+  #     - broker_net
   
-  processing:
-    build:
-      context: ./processing
-      dockerfile: Dockerfile
-    networks:
-      - broker_net
-      - db_net
-  
-  streamlit:
-    build: 
-      context: ./alerting
-      dockerfile: Dockerfile
-    ports:
-      - "8501:8501"
-    networks:
-      - db_net
+  # processing:
+  #   build:
+  #     context: ./processing
+  #     dockerfile: Dockerfile
+  #   networks:
+  #     - broker_net
+  #     - db_net
 
 networks:
   db_net:
@@ -83,3 +90,4 @@ networks:
 
 volumes:
   mongo_data:
+  spark_checkpoint:

@@ -1,0 +1,3 @@
+MONGO_USERNAME=admin
+MONGO_PASSWORD=flashloan
+REDIS_PASSWORD=flashloan
