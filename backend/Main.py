@@ -28,7 +28,7 @@ def root():
     return {"message": "Server is running!"}
 
 
-@app.post("/api/decode")
+@app.post("/decode")
 def decode(body: DecodeRequest):
     return DecodeResponse(
         tx_hash=body.tx_hash,

@@ -1,4 +1,0 @@
-echo "venv/
-__pycache__/
-*.pyc
-.env" > Back_End/.gitignore
