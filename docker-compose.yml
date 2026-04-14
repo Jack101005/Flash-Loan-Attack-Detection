@@ -69,6 +69,35 @@ services:
     networks:
       - broker_net
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://backend:8000
+    networks:
+      - broker_net
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - REDIS_URL=redis://default:${REDIS_PASS}@redis:6379
+    networks:
+      - broker_net
+      - db_net
+    depends_on:
+      - kafka
+      - redis
+
   # ingestion:
   #   build: 
   #     context: ./ingestion
