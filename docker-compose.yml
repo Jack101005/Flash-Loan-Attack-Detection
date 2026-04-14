@@ -1,0 +1,85 @@
+services:
+  zookeeper:
+    restart: always
+    image: confluentinc/cp-zookeeper:7.6.1
+    expose:
+      - 2181
+    networks:
+      - broker_net
+  
+  kafka:
+    restart: always
+    image: confluentinc/cp-kafka:7.6.1
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    networks:
+      - broker_net
+
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - db_net
+
+  mongodb:
+    restart: always
+    image: mongo:7.0
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - db_net
+    ports:
+      - "27017:27017"
+
+  spark_master:
+    image: bitnami/spark:3.5.1
+    ports:
+      - "8080:8080"
+    expose:
+      - 7077
+    networks:
+      - broker_net
+
+  spark_worker:
+    image: bitnami/spark:3.5.1
+    environment:
+      SPARK_MASTER_URL: spark://spark_master:7077
+    expose:
+      - 8081
+    networks:
+      - broker_net
+
+  ingestion:
+    build: 
+      context: ./ingestion
+      dockerfile: Dockerfile
+    networks:
+      - broker_net
+  
+  processing:
+    build:
+      context: ./processing
+      dockerfile: Dockerfile
+    networks:
+      - broker_net
+      - db_net
+  
+  streamlit:
+    build: 
+      context: ./alerting
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    networks:
+      - db_net
+
+networks:
+  db_net:
+  broker_net:
+
+volumes:
+  mongo_data:
