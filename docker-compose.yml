@@ -98,6 +98,18 @@ services:
       - kafka
       - redis
 
+  storage:
+    build:
+      context: ./storage
+      dockerfile: Dockerfile
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-flash_loan_detection}
+    networks:
+      - db_net
+    depends_on:
+      - backend
+
   # ingestion:
   #   build: 
   #     context: ./ingestion
