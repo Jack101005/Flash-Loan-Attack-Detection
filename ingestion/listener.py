@@ -3,13 +3,14 @@ listener.py — Flash Loan Mempool Listener (Stage 1: Ingestion)
 
 Subscribes to newPendingTransactions via WebSocket, applies two-pass
 filtering (contract address + function selector), decodes flash loan
-parameters, and prints structured detection output.
+parameters, and publishes structured JSON to Kafka topic 'raw_txns'.
 
 Features:
   - Two-pass filter: contract address + function selector
   - ABI decoding for Aave V3, Balancer V2, Uniswap V3
   - In-memory deduplication buffer
   - Auto-reconnect with exponential backoff (max 5 retries)
+  - Kafka producer integration (degrades gracefully if Kafka is down)
   - Session statistics
 
 Works identically against:
@@ -20,8 +21,9 @@ Usage:
     python listener.py                          # default: ws://localhost:8765
     python listener.py --url wss://your-rpc     # custom endpoint
     python listener.py --max-retries 10         # custom retry limit
+    python listener.py --no-kafka               # skip Kafka (print only)
 
-Requires: pip install web3 websockets
+Requires: pip install web3 websockets confluent-kafka
 """
 
 import asyncio
@@ -29,6 +31,23 @@ import json
 import time
 import argparse
 import os
+import sys
+
+# Allow running listener.py directly (python ingestion/listener.py)
+# while still importing from the broker/ sibling package at project root.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+try:
+    from broker.kafka_producer import (
+        create_producer,
+        produce_message,
+        flush_producer,
+        BOOTSTRAP_SERVERS_HOST,
+    )
+    _KAFKA_AVAILABLE = True
+except ImportError:
+    _KAFKA_AVAILABLE = False
+
 from web3 import AsyncWeb3, WebSocketProvider
 from web3.exceptions import TransactionNotFound
 from config import WATCHLIST, SELECTORS
@@ -123,6 +142,8 @@ class Stats:
         self.decode_errors = 0
         self.duplicates = 0
         self.reconnections = 0
+        self.kafka_sent = 0
+        self.kafka_failures = 0
         self.start_time = time.time()
 
     def summary(self):
@@ -137,13 +158,15 @@ class Stats:
         print(f"  Decode errors:              {self.decode_errors}")
         print(f"  Duplicates skipped:         {self.duplicates}")
         print(f"  Reconnections:              {self.reconnections}")
+        print(f"  Kafka messages sent:        {self.kafka_sent}")
+        print(f"  Kafka send failures:        {self.kafka_failures}")
         print(f"{'='*60}\n")
 
 
 # ──────────────────────────────────────────────────────────────
 # Core listener session — one WebSocket connection lifecycle
 # ──────────────────────────────────────────────────────────────
-async def _run_session(wss_url: str, stats: Stats, seen_hashes: set):
+async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_producer=None):
     """
     Run a single WebSocket session. Returns normally on connection
     drop (so the caller can reconnect). Raises KeyboardInterrupt
@@ -166,7 +189,9 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set):
         }
 
         await w3.eth.subscribe("newPendingTransactions")
+        kafka_status = "connected" if kafka_producer else "disabled (print-only)"
         print(f"[listener] Connected to {wss_url}")
+        print(f"[listener] Kafka: {kafka_status}")
         print(f"[listener] Watching {len(WATCHLIST)} contracts, {len(SELECTORS)} selectors")
         print(f"[listener] Listening for flash loans...\n")
 
@@ -267,14 +292,36 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set):
 
             print()
 
-            # TODO: Kafka producer — produce out_data to topic 'raw_txns'
-            # producer.produce('raw_txns', key=tx_hash_str, value=json.dumps(out_data))
+            # ── Kafka produce ──────────────────────────────────────────────────
+            if kafka_producer:
+                try:
+                    produce_message(kafka_producer, "raw_txns", tx_hash_str, out_data)
+                    stats.kafka_sent += 1
+                    print(f"  [kafka]  → raw_txns  key={tx_hash_str[:16]}...")
+                except BufferError:
+                    # Producer queue full — write to fallback log
+                    stats.kafka_failures += 1
+                    _write_kafka_failure(out_data)
+                except Exception as e:
+                    stats.kafka_failures += 1
+                    print(f"  [kafka]  Send failed: {e}")
+                    _write_kafka_failure(out_data)
+
+
+def _write_kafka_failure(out_data: dict) -> None:
+    """Append failed message to local fallback log for manual replay."""
+    log_path = os.path.join(
+        os.path.dirname(__file__), "..", "data", "kafka_failures.log"
+    )
+    os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
+    with open(log_path, "a") as f:
+        f.write(json.dumps(out_data) + "\n")
 
 
 # ──────────────────────────────────────────────────────────────
 # Reconnect wrapper with exponential backoff
 # ──────────────────────────────────────────────────────────────
-async def log_mempool(wss_url: str, max_retries: int = 5):
+async def log_mempool(wss_url: str, max_retries: int = 5, use_kafka: bool = True):
     """
     Run the listener with automatic reconnection on WebSocket drops.
 
@@ -290,60 +337,70 @@ async def log_mempool(wss_url: str, max_retries: int = 5):
     stats = Stats()
     seen_hashes: set = set()
     retry_count = 0
-    BASE_DELAY = 1.0  # Starting backoff delay in seconds
+    BASE_DELAY = 1.0
 
-    while True:
-        prev_seen = stats.total_seen
+    # ── Kafka setup ────────────────────────────────────────────────────────────
+    kafka_producer = None
+    if use_kafka and _KAFKA_AVAILABLE:
+        print("[listener] Connecting to Kafka...")
+        kafka_producer = create_producer()
+        if kafka_producer is None:
+            print("[listener] Kafka not reachable — running in print-only mode.")
+            print("[listener] Start Docker first:  cd infra && docker compose up -d")
+    elif not _KAFKA_AVAILABLE:
+        print("[listener] broker/kafka_producer.py not importable — print-only mode.")
 
-        try:
-            await _run_session(wss_url, stats, seen_hashes)
+    try:
+        while True:
+            prev_seen = stats.total_seen
 
-            # _run_session returned normally — server closed cleanly.
-            # In production, this could be Alchemy dropping the connection
-            # gracefully, so we should still reconnect.
-            gap_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            print(f"\n[listener] Server closed connection at {gap_time}")
+            try:
+                await _run_session(wss_url, stats, seen_hashes, kafka_producer)
 
-            # If we processed messages, this was a working connection
-            if stats.total_seen > prev_seen:
-                retry_count = 0
+                gap_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                print(f"\n[listener] Server closed connection at {gap_time}")
 
-        except KeyboardInterrupt:
-            print("\n[listener] Stopped by user.")
-            break
+                if stats.total_seen > prev_seen:
+                    retry_count = 0
 
-        except Exception as e:
-            # Connection dropped unexpectedly
-            gap_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            print(f"\n[listener] Connection lost at {gap_time}: "
-                  f"{type(e).__name__}: {e}")
+            except KeyboardInterrupt:
+                print("\n[listener] Stopped by user.")
+                break
 
-            # If we processed messages before the drop, reset retry counter
-            if stats.total_seen > prev_seen:
-                retry_count = 0
+            except Exception as e:
+                gap_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                print(f"\n[listener] Connection lost at {gap_time}: "
+                      f"{type(e).__name__}: {e}")
 
-        # --- Reconnect with exponential backoff ---
-        retry_count += 1
-        stats.reconnections += 1
+                if stats.total_seen > prev_seen:
+                    retry_count = 0
 
-        if retry_count > max_retries:
-            print(f"[listener] ALERT: Max retries ({max_retries}) exhausted. "
-                  f"Exiting.")
-            print(f"[listener] Transactions may have been missed during gaps.")
-            break
+            # --- Reconnect with exponential backoff ---
+            retry_count += 1
+            stats.reconnections += 1
 
-        # Exponential backoff: 1s, 2s, 4s, 8s, 16s, ...
-        delay = BASE_DELAY * (2 ** (retry_count - 1))
-        print(f"[listener] Reconnecting in {delay:.0f}s "
-              f"(attempt {retry_count}/{max_retries})...")
+            if retry_count > max_retries:
+                print(f"[listener] ALERT: Max retries ({max_retries}) exhausted. "
+                      f"Exiting.")
+                print(f"[listener] Transactions may have been missed during gaps.")
+                break
 
-        try:
-            await asyncio.sleep(delay)
-        except KeyboardInterrupt:
-            print("\n[listener] Stopped by user during reconnect wait.")
-            break
+            delay = BASE_DELAY * (2 ** (retry_count - 1))
+            print(f"[listener] Reconnecting in {delay:.0f}s "
+                  f"(attempt {retry_count}/{max_retries})...")
 
-        print(f"[listener] Attempting reconnection...")
+            try:
+                await asyncio.sleep(delay)
+            except KeyboardInterrupt:
+                print("\n[listener] Stopped by user during reconnect wait.")
+                break
+
+            print(f"[listener] Attempting reconnection...")
+
+    finally:
+        # Flush any in-flight Kafka messages before exit
+        if kafka_producer:
+            flush_producer(kafka_producer)
 
     stats.summary()
 
@@ -364,9 +421,14 @@ if __name__ == "__main__":
         default=5,
         help="Max reconnection attempts before exiting (default: 5)",
     )
+    parser.add_argument(
+        "--no-kafka",
+        action="store_true",
+        help="Disable Kafka — print detections only (useful when Docker is not running)",
+    )
     args = parser.parse_args()
 
     try:
-        asyncio.run(log_mempool(args.url, args.max_retries))
+        asyncio.run(log_mempool(args.url, args.max_retries, use_kafka=not args.no_kafka))
     except KeyboardInterrupt:
         print("\n[listener] Stopped by user.")
