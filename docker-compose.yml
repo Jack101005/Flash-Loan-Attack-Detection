@@ -31,8 +31,33 @@ services:
     ports:
       - "6379:6379"
     command: redis-server --requirepass ${REDIS_PASS} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    env_file:
+      - .env
     networks:
       - db_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASS}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  price-feed:
+    build:
+      context: ./cache
+      dockerfile: Dockerfile
+    container_name: price-feed
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASS=${REDIS_PASS}
+    networks:
+      - db_net                      
 
   spark_master:
     image: apache/spark:3.5.0
@@ -54,7 +79,7 @@ services:
     image: apache/spark:3.5.0
     environment:
       SPARK_MODE: worker
-      SPARK_MASTER_URL: spark://spark:7077
+      SPARK_MASTER_URL: spark://spark_master:7077
       SPARK_WORKER_MEMORY: 1G
       SPARK_WORKER_CORES: 1
       SPARK_RPC_AUTHENTICATION_ENABLED: no
@@ -98,17 +123,17 @@ services:
       - kafka
       - redis
 
-  storage:
-    build:
-      context: ./storage
-      dockerfile: Dockerfile
-    environment:
-      - MONGODB_URI=${MONGODB_URI}
-      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-flash_loan_detection}
-    networks:
-      - db_net
-    depends_on:
-      - backend
+  # storage:
+  #   build:
+  #     context: ./storage
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - MONGODB_URI=${MONGODB_URI}
+  #     - MONGODB_DB_NAME=${MONGODB_DB_NAME:-flash_loan_detection}
+  #   networks:
+  #     - db_net
+  #   depends_on:
+  #     - backend
 
   # ingestion:
   #   build: 
