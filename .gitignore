@@ -1,5 +1,6 @@
 .agent
 docs/
+.vscode
 
 #logs
 logs
