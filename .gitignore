@@ -1,6 +1,7 @@
 .agent
 docs/
 .vscode
+.DS_Store
 
 #logs
 logs
