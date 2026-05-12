@@ -123,17 +123,31 @@ services:
       - kafka
       - redis
 
-  # storage:
-  #   build:
-  #     context: ./storage
-  #     dockerfile: Dockerfile
-  #   environment:
-  #     - MONGODB_URI=${MONGODB_URI}
-  #     - MONGODB_DB_NAME=${MONGODB_DB_NAME:-flash_loan_detection}
-  #   networks:
-  #     - db_net
-  #   depends_on:
-  #     - backend
+  mongo:
+    build:
+      context: ./storage
+      dockerfile: Dockerfile
+    environment:
+      - MONGODB_URL=${MONGODB_URL}
+      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-flash_loan_detection}
+    networks:
+      - db_net
+    depends_on:
+      - backend
+
+  mongo-express:
+    image: mongo-express
+    restart: always
+    ports:
+      - "8082:8081"  # Map local 8082 to container 8081
+    environment:
+      - ME_CONFIG_MONGODB_URL=${MONGODB_URL}
+      - ME_CONFIG_MONGODB_SSL=true
+      - ME_CONFIG_MONGODB_AUTH_DATABASE=admin
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=pass
+    networks:
+      - db_net
 
   # ingestion:
   #   build: 

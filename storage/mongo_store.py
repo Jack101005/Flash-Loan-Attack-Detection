@@ -19,7 +19,7 @@ for _candidate in [
         load_dotenv(dotenv_path=_candidate)
         break
 
-MONGODB_URI: str = os.getenv("MONGODB_URI", "")
+MONGODB_URI: str = os.getenv("MONGODB_URL", "")
 MONGODB_DB_NAME: str = os.getenv("MONGODB_DB_NAME", "flash_loan_detection")
 
 if not MONGODB_URI:
