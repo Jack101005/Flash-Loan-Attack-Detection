@@ -2,7 +2,7 @@ FROM python:3.12
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir redis requests dotenv
+RUN pip install --no-cache-dir redis requests dotenv pymongo
 
 # Copy script to container
 COPY price_feed.py .

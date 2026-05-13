@@ -40,6 +40,19 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+  
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: redisinsight
+    restart: always
+    ports:
+      - "5540:5540" # Map local port 5540 to container port 5540
+    networks:
+      - db_net
+    depends_on:
+      - redis
+    volumes:
+      - redisinsight_data:/data
 
   price-feed:
     build:
@@ -141,7 +154,7 @@ services:
     ports:
       - "8082:8081"  # Map local 8082 to container 8081
     environment:
-      - ME_CONFIG_MONGODB_URL=${MONGODB_URL}
+      - ME_CONFIG_MONGODB_URL=${MONGODB_URI}
       - ME_CONFIG_MONGODB_SSL=true
       - ME_CONFIG_MONGODB_AUTH_DATABASE=admin
       - ME_CONFIG_BASICAUTH_USERNAME=admin
@@ -169,5 +182,5 @@ networks:
   broker_net:
 
 volumes:
-  mongo_data:
   spark_checkpoint:
+  redisinsight_data:
