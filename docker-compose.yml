@@ -161,22 +161,7 @@ services:
       - ME_CONFIG_BASICAUTH_PASSWORD=pass
     networks:
       - db_net
-
-  # ingestion:
-  #   build: 
-  #     context: ./ingestion
-  #     dockerfile: Dockerfile
-  #   networks:
-  #     - broker_net
-  
-  # processing:
-  #   build:
-  #     context: ./processing
-  #     dockerfile: Dockerfile
-  #   networks:
-  #     - broker_net
-  #     - db_net
-
+      
 networks:
   db_net:
   broker_net:
