@@ -1,0 +1,171 @@
+services:
+  zookeeper:
+    restart: always
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    expose:
+      - 2181
+    networks:
+      - broker_net
+  
+  kafka:
+    restart: always
+    image: confluentinc/cp-kafka:7.6.1
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 1
+      KAFKA_LOG_RETENTION_BYTES: 536870912
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    networks:
+      - broker_net
+
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASS} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    env_file:
+      - .env
+    networks:
+      - db_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASS}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: redisinsight
+    restart: always
+    ports:
+      - "5540:5540" # Map local port 5540 to container port 5540
+    networks:
+      - db_net
+    depends_on:
+      - redis
+    volumes:
+      - redisinsight_data:/data
+
+  price-feed:
+    build:
+      context: ./cache
+      dockerfile: Dockerfile
+    container_name: price-feed
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASS=${REDIS_PASS}
+    networks:
+      - db_net                      
+
+  spark_master:
+    image: apache/spark:3.5.0
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: no
+      SPARK_RPC_ENCRYPTION_ENABLED: no
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no
+      SPARK_SSL_ENABLED: no
+      SPARK_USER: spark
+    ports:
+      - "8080:8080"
+    expose:
+      - 7077
+    networks:
+      - broker_net
+
+  spark_worker:
+    image: apache/spark:3.5.0
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark_master:7077
+      SPARK_WORKER_MEMORY: 1G
+      SPARK_WORKER_CORES: 1
+      SPARK_RPC_AUTHENTICATION_ENABLED: no
+      SPARK_RPC_ENCRYPTION_ENABLED: no
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no
+      SPARK_SSL_ENABLED: no
+      SPARK_USER: spark
+    volumes:
+      - spark_checkpoint:/tmp/spark_checkpoint
+    expose:
+      - 8081
+    networks:
+      - broker_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://backend:8000
+    networks:
+      - broker_net
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - REDIS_URL=redis://default:${REDIS_PASS}@redis:6379
+    networks:
+      - broker_net
+      - db_net
+    depends_on:
+      - kafka
+      - redis
+
+  mongo:
+    build:
+      context: ./storage
+      dockerfile: Dockerfile
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-flash_loan_detection}
+    networks:
+      - db_net
+    depends_on:
+      - backend
+
+  mongo-express:
+    image: mongo-express
+    restart: always
+    ports:
+      - "8082:8081"  # Map local 8082 to container 8081
+    environment:
+      - ME_CONFIG_MONGODB_URL=${MONGODB_URI}
+      - ME_CONFIG_MONGODB_SSL=true
+      - ME_CONFIG_MONGODB_AUTH_DATABASE=admin
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=pass
+    networks:
+      - db_net
+
+networks:
+  db_net:
+  broker_net:
+
+volumes:
+  spark_checkpoint:
+  redisinsight_data:
