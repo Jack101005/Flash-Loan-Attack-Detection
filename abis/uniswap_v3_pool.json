@@ -1,0 +1,85 @@
+[
+  {
+    "name": "flash",
+    "type": "function",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      {"name": "recipient", "type": "address"},
+      {"name": "amount0", "type": "uint256"},
+      {"name": "amount1", "type": "uint256"},
+      {"name": "data", "type": "bytes"}
+    ],
+    "outputs": []
+  },
+  {
+    "name": "swap",
+    "type": "function",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      {"name": "recipient", "type": "address"},
+      {"name": "zeroForOne", "type": "bool"},
+      {"name": "amountSpecified", "type": "int256"},
+      {"name": "sqrtPriceLimitX96", "type": "uint160"},
+      {"name": "data", "type": "bytes"}
+    ],
+    "outputs": [
+      {"name": "amount0", "type": "int256"},
+      {"name": "amount1", "type": "int256"}
+    ]
+  },
+  {
+    "name": "token0",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{"name": "", "type": "address"}]
+  },
+  {
+    "name": "token1",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{"name": "", "type": "address"}]
+  },
+  {
+    "name": "fee",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{"name": "", "type": "uint24"}]
+  },
+  {
+    "name": "liquidity",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{"name": "", "type": "uint128"}]
+  },
+  {
+    "name": "Flash",
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {"name": "sender", "type": "address", "indexed": true},
+      {"name": "recipient", "type": "address", "indexed": true},
+      {"name": "amount0", "type": "uint256", "indexed": false},
+      {"name": "amount1", "type": "uint256", "indexed": false},
+      {"name": "paid0", "type": "uint256", "indexed": false},
+      {"name": "paid1", "type": "uint256", "indexed": false}
+    ]
+  },
+  {
+    "name": "Swap",
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {"name": "sender", "type": "address", "indexed": true},
+      {"name": "recipient", "type": "address", "indexed": true},
+      {"name": "amount0", "type": "int256", "indexed": false},
+      {"name": "amount1", "type": "int256", "indexed": false},
+      {"name": "sqrtPriceX96", "type": "uint160", "indexed": false},
+      {"name": "liquidity", "type": "uint128", "indexed": false},
+      {"name": "tick", "type": "int24", "indexed": false}
+    ]
+  }
+]
