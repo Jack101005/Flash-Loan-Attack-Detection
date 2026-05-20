@@ -26,16 +26,13 @@ if not MONGODB_URI:
     raise EnvironmentError("MONGODB_URI is not set. Check your backend/.env file.")
 
 
-# Singleton client
+# singleton client
 _client: MongoClient | None = None
 
 
 def get_client() -> MongoClient:
-    """Return (or lazily create) the shared MongoClient."""
     global _client
     if _client is None:
-        # certifi provides an up-to-date CA bundle, fixing SSL handshake
-        # errors with MongoDB Atlas on Python 3.13 / newer OpenSSL.
         _client = MongoClient(
             MONGODB_URI,
             serverSelectionTimeoutMS=5000,
@@ -47,12 +44,10 @@ def get_client() -> MongoClient:
 
 
 def get_db() -> Database:
-    """Return the application database."""
     return get_client()[MONGODB_DB_NAME]
 
 
 def ping() -> bool:
-    """Return True if the cluster is reachable, False otherwise."""
     try:
         get_client().admin.command("ping")
         return True
@@ -60,7 +55,7 @@ def ping() -> bool:
         return False
 
 
-# Collection helpers
+# collection helpers
 def transactions_collection() -> Collection:
     return get_db()["transactions"]
 
@@ -69,7 +64,7 @@ def alerts_collection() -> Collection:
     return get_db()["alerts"]
 
 
-# Schema / index initialisation
+# index initialisation
 def init_indexes() -> None:
     """
     Ensure indexes exist for all collections.
@@ -86,7 +81,7 @@ def init_indexes() -> None:
     alr.create_index([("created_at", DESCENDING)], name="alert_created_at_desc")
 
 
-# Document schemas (plain dicts – use as factory functions)
+# document schemas
 def make_transaction_doc(
     tx_hash: str,
     block_number: int,
@@ -95,19 +90,7 @@ def make_transaction_doc(
     summary: str,
     raw_data: dict | None = None,
 ) -> dict:
-    """
-    Schema for the `transactions` collection.
 
-    {
-        tx_hash:       str    unique transaction hash
-        block_number:  int    Ethereum block number
-        is_flash_loan: bool   detection result
-        risk_level:    str    severity
-        summary:       str    human-readable description
-        raw_data:      dict   original decoded payload (optional)
-        detected_at:   datetime (UTC)
-    }
-    """
     return {
         "tx_hash": tx_hash,
         "block_number": block_number,
@@ -125,17 +108,7 @@ def make_alert_doc(
     message: str,
     notified: bool = False,
 ) -> dict:
-    """
-    Schema for the `alerts` collection.
 
-    {
-        tx_hash:    str    linked transaction
-        risk_level: str    severity
-        message:    str    alert body
-        notified:   bool   whether the alert was dispatched
-        created_at: datetime (UTC)
-    }
-    """
     return {
         "tx_hash": tx_hash,
         "risk_level": risk_level,
