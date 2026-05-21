@@ -1,16 +1,15 @@
 import sys
 import os
-import redis
-import json
 
 # Allow importing from the project root (e.g. storage.mongo_store)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
 from pydantic import BaseModel
 
-from storage.mongo_store import init_indexes, ping, transactions_collection, make_transaction_doc
+from storage.mongo_store import init_indexes, ping, transactions_collection, make_transaction_doc, get_recent_detections
 
 app = FastAPI(title="Flash Loan Attack Detection API")
 
@@ -21,16 +20,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-redis_client = redis.Redis.from_url(
-    os.getenv("REDIS_URL", "redis://localhost:6379"), 
-    decode_responses=True
-)
 
 @app.on_event("startup")
 def on_startup():
     """Ensure MongoDB indexes exist on first boot."""
-    init_indexes()
-    print("[OK] MongoDB indexes initialized.")
+    try:
+        init_indexes()
+        print("[OK] MongoDB indexes initialized.")
+    except Exception as e:
+        print(f"[WARN] MongoDB unavailable at startup, indexes skipped: {e}")
 
 
 class DecodeRequest(BaseModel):
@@ -42,6 +40,14 @@ class DecodeResponse(BaseModel):
     is_flash_loan: bool
     risk_level: str
     summary: str
+    protocol: Optional[str] = None
+    from_address: Optional[str] = None
+    token: Optional[str] = None
+    amount_usd: Optional[float] = None
+    total_usd: Optional[float] = None
+    confidence: Optional[str] = None
+    pools_count: Optional[int] = None
+    cycle_path: Optional[list] = None
 
 #route
 @app.get("/")
@@ -62,68 +68,84 @@ def health_db():
 
 @app.post("/decode", response_model=DecodeResponse)
 def decode(body: DecodeRequest):
-    result = DecodeResponse(
-        tx_hash=body.tx_hash,
+    raw = body.tx_hash.strip()
+    # Normalize: build both variants for flexible matching
+    lower = raw.lower()
+    no_prefix = lower[2:] if lower.startswith("0x") else lower
+    with_prefix = "0x" + no_prefix
+
+    try:
+        doc = transactions_collection().find_one(
+            {"tx_hash": {"$in": [no_prefix, with_prefix, raw, lower]}},
+            {"_id": 0},
+        )
+    except Exception as e:
+        print(f"[decode] MongoDB query error: {e}")
+        doc = None
+
+    if not doc:
+        return DecodeResponse(
+            tx_hash=raw,
+            is_flash_loan=False,
+            risk_level="UNKNOWN",
+            summary="Transaction not found in detection database. It may not have been processed yet or is not a flash loan.",
+        )
+
+    confidence = doc.get("confidence", "LOW")
+    risk_map   = {"HIGH": "HIGH", "MEDIUM": "MEDIUM", "LOW": "LOW"}
+    risk_level = risk_map.get(confidence, "LOW")
+
+    protocol   = doc.get("protocol", "Unknown")
+    token      = doc.get("token", "Unknown")
+    amount     = doc.get("amount_usd", 0)
+    total      = doc.get("total_usd", 0)
+    sender     = doc.get("from", "Unknown")
+    pools      = doc.get("pools_count", 1)
+
+    summary = (
+        f"Flash loan detected via {protocol}. "
+        f"Sender: {sender[:20]}... | "
+        f"Token: {token} | "
+        f"Amount: ${amount:,.0f} USD | "
+        f"Total by sender: ${total:,.0f} USD | "
+        f"Pools used: {pools}"
+    )
+
+    return DecodeResponse(
+        tx_hash=raw,
         is_flash_loan=True,
-        risk_level="HIGH",
-        summary="Flash loan attack detected! Circular trade found.",
+        risk_level=risk_level,
+        summary=summary,
+        protocol=protocol,
+        from_address=sender,
+        token=token,
+        amount_usd=float(amount),
+        total_usd=float(total),
+        confidence=confidence,
+        pools_count=int(pools),
+        cycle_path=doc.get("cycle_path", []),
     )
-
-    # Persist to MongoDB
-    doc = make_transaction_doc(
-        tx_hash=result.tx_hash,
-        block_number=0,
-        is_flash_loan=result.is_flash_loan,
-        risk_level=result.risk_level,
-        summary=result.summary,
-    )
-    transactions_collection().update_one(
-        {"tx_hash": doc["tx_hash"]},
-        {"$setOnInsert": doc},
-        upsert=True,
-    )
-
-    return result
 
 @app.get("/live-detections")
 def get_live_detections():
-    """Fetch the latest transactions pushed to Redis by price_feed.py"""
+    """Fetch the latest flash loan detections from MongoDB."""
     try:
-        raw_txs = redis_client.lrange('TX_QUEUE', 0, 49)
-        detections = []
-        
-        for tx_str in raw_txs:
-            try:
-                tx = json.loads(tx_str)
-                
-                # 1. Clean up the token symbol (Extracts "ETH" from "Ethereum(ETH)")
-                raw_asset = tx.get("asset", "ETH")
-                asset_symbol = raw_asset.split('(')[-1].replace(')', '') if '(' in raw_asset else raw_asset
-                
-                # 2. Clean up the target protocol/pool name (Removes extra spaces)
-                target_pool = tx.get("to_nametag", "Smart Contract").strip()
-                if not target_pool:
-                    target_pool = "Smart Contract"
-
-                # 3. Construct a logical visual cycle for the topology graph
-                # Creates a path like: ["ETH", "Aave: Pool V3", "Arbitrage Execution", "ETH"]
-                fallback_cycle = [asset_symbol, target_pool, "Arbitrage Execution", asset_symbol]
-                
-                # Map the raw JSON to the frontend's Detection interface
-                detections.append({
-                    "tx_hash": tx.get("transaction_hash", "0x000").strip(),
-                    "is_suspicious": tx.get("is_suspicious", True),
-                    "confidence": "HIGH" if float(tx.get("txn_fee", 0)) > 0.0001 else "MEDIUM",
-                    "cycle_path": tx.get("cycle_path", fallback_cycle), 
-                    "profit_estimate": float(tx.get("amount", 0)), 
-                    "price_deviation": float(tx.get("txn_fee", 0)) * 1000, # Mocking deviation for UI
-                    "protocol": tx.get("source", "Unknown"),
-                    "timestamp": tx.get("block", 0) # Using block as a mock timestamp if age isn't parsed
-                })
-            except (json.JSONDecodeError, ValueError):
-                continue
-                
-        return detections
+        docs = get_recent_detections(50)
+        return [
+            {
+                "tx_hash":      d.get("tx_hash", "0x000"),
+                "is_suspicious": True,
+                "confidence":   d.get("confidence", "LOW"),
+                "cycle_path":   d.get("cycle_path", []),
+                "amount_usd":   float(d.get("amount_usd", 0)),
+                "total_usd":    float(d.get("total_usd", 0)),
+                "protocol":     d.get("protocol", "Unknown"),
+                "timestamp":    int(d.get("timestamp", 0)),
+                "from":         d.get("from", ""),
+                "token":        d.get("token", ""),
+            }
+            for d in docs
+        ]
     except Exception as e:
-        print(f"Error fetching from Redis: {e}")
+        print(f"Error fetching from MongoDB: {e}")
         return []

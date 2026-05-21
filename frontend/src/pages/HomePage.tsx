@@ -18,10 +18,10 @@ export default function HomePage() {
       try {
         const response = await fetch(`${API_URL}/live-detections`);
         if (!response.ok) throw new Error("Network response was not ok");
-        
+
         const data: Detection[] = await response.json();
         setDetections(data);
-        
+
         // Auto-select the first transaction if none is selected
         if (data.length > 0 && !selectedTx) {
           setSelectedTx(data[0]);
@@ -43,25 +43,23 @@ export default function HomePage() {
   const kpiData = {
     activeAlerts: detections.length,
     criticalAlerts: detections.filter(d => d.confidence === "HIGH").length,
-    maxProfit: Math.max(...detections.map(d => d.profit_estimate), 0),
-    avgDeviation: detections.length 
-      ? detections.reduce((acc, curr) => acc + curr.price_deviation, 0) / detections.length * 100 
-      : 0,
+    mediumAlerts: detections.filter(d => d.confidence === "MEDIUM").length,
+    maxBorrowed: Math.max(...detections.map(d => d.amount_usd), 0),
   };
 
   return (
     <DashboardLayout>
       <KpiCards data={kpiData} />
-      
+
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-6">
-        <div className="col-span-1 lg:col-span-2 relative">
-           <LiveDetectionsTable 
-              detections={detections} 
-              onSelect={setSelectedTx} 
-           />
+        <div className="col-span-1 lg:col-span-3 relative">
+          <LiveDetectionsTable
+            detections={detections}
+            onSelect={setSelectedTx}
+          />
         </div>
-        <div className="col-span-1 lg:col-span-3">
-           <TransactionGraph transaction={selectedTx} />
+        <div className="col-span-1 lg:col-span-2">
+          <TransactionGraph transaction={selectedTx} />
         </div>
       </div>
     </DashboardLayout>

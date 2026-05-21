@@ -9,5 +9,6 @@ dependencies = [
     "pydantic>=2.13.0",
     "pymongo[srv]>=4.16.0",
     "python-dotenv>=1.2.2",
+    "redis>=7.4.0",
     "uvicorn>=0.44.0",
 ]

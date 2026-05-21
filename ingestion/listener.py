@@ -241,6 +241,16 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_produ
             protocol_method = SELECTORS[selector]
             stats.detected += 1
 
+            # --- Resolve block timestamp (historical price lookup) ---
+            block_timestamp = time.time()
+            block_number = tx.get("blockNumber")
+            if block_number is not None:
+                try:
+                    block = await w3.eth.get_block(block_number)
+                    block_timestamp = block["timestamp"]
+                except Exception:
+                    pass
+
             # --- Build output (per technical spec) ---
             out_data = {
                 "tx_hash": tx_hash_str,
@@ -250,7 +260,7 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_produ
                 "value": str(tx.get("value", 0)),
                 "gas": str(tx.get("gas", 0)),
                 "gas_price": str(tx.get("gasPrice", 0)),
-                "timestamp": time.time(),
+                "timestamp": block_timestamp,
                 "source": "ethereum_mainnet",
             }
 

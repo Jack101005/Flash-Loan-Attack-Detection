@@ -40,12 +40,14 @@ except ImportError:
     sys.exit(1)
 
 
-def load_transactions(csv_path: str) -> dict:
+def load_transactions(csv_path: str) -> tuple[dict, dict]:
     """
-    Load test_data.csv into a dict keyed by tx_hash for O(1) lookup.
-    Returns: {tx_hash: {full tx object as JSON-RPC would return}, ...}
+    Load test_data_enriched.csv (or test_data.csv as fallback) into:
+      - txns: {tx_hash: full tx object} for O(1) lookup
+      - block_timestamps: {block_number_int: unix_timestamp_int}
     """
     txns = {}
+    block_timestamps = {}
     path = Path(csv_path)
     if not path.exists():
         print(f"[error] {csv_path} not found!")
@@ -58,6 +60,16 @@ def load_transactions(csv_path: str) -> dict:
             if not tx_hash or not tx_hash.startswith("0x"):
                 continue
 
+            block_number_raw = row.get("block_number", "").strip()
+            block_ts_raw     = row.get("block_timestamp", "").strip()
+
+            block_number_int = int(block_number_raw) if block_number_raw else None
+            block_ts_int     = int(block_ts_raw)     if block_ts_raw     else None
+            block_number_hex = hex(block_number_int) if block_number_int else None
+
+            if block_number_int and block_ts_int:
+                block_timestamps[block_number_int] = block_ts_int
+
             # Build a transaction object matching what eth_getTransactionByHash returns
             txns[tx_hash] = {
                 "hash": tx_hash,
@@ -65,31 +77,32 @@ def load_transactions(csv_path: str) -> dict:
                 "to": row.get("to", "0x" + "0" * 40),
                 "input": row.get("input", "0x"),
                 "value": row.get("value", "0x0"),
-                "gas": row.get("gas", "0x7a120"),          # default 500,000
-                "gasPrice": row.get("gas_price", "0x6fc23ac00"),  # default 30 gwei
+                "gas": row.get("gas", "0x7a120"),
+                "gasPrice": row.get("gas_price", "0x6fc23ac00"),
                 "nonce": row.get("nonce", "0x0"),
-                # Fields that web3.py may expect:
-                "blockHash": None,          # pending tx — not mined yet
-                "blockNumber": None,        # pending tx
-                "transactionIndex": None,   # pending tx
+                "blockHash": ("0x" + "0" * 64) if block_number_hex else None,
+                "blockNumber": block_number_hex,
+                "transactionIndex": "0x0" if block_number_hex else None,
                 "type": "0x2",
-                "chainId": "0x1",           # mainnet
+                "chainId": "0x1",
                 "v": "0x0",
                 "r": "0x" + "0" * 64,
                 "s": "0x" + "0" * 64,
                 "maxFeePerGas": row.get("gas_price", "0x6fc23ac00"),
-                "maxPriorityFeePerGas": "0x59682f00",  # 1.5 gwei
+                "maxPriorityFeePerGas": "0x59682f00",
             }
 
-    print(f"[mock] Loaded {len(txns)} transactions from {csv_path}")
-    return txns
+    enriched_count = sum(1 for t in txns.values() if t["blockNumber"])
+    print(f"[mock] Loaded {len(txns)} transactions ({enriched_count} with block timestamps) from {csv_path}")
+    return txns, block_timestamps
 
 
 class MockEthereumNode:
     """Handles JSON-RPC 2.0 requests and subscription management."""
 
-    def __init__(self, transactions: dict, delay: float, loop: bool):
+    def __init__(self, transactions: dict, block_timestamps: dict, delay: float, loop: bool):
         self.transactions = transactions
+        self.block_timestamps = block_timestamps  # {block_number_int: unix_timestamp_int}
         self.tx_hashes = list(transactions.keys())
         self.delay = delay
         self.loop = loop
@@ -142,9 +155,14 @@ class MockEthereumNode:
                         "jsonrpc": "2.0", "id": req_id, "result": "0x1"
                     }))
 
+                elif method == "eth_getBlockByNumber":
+                    response = self._handle_get_block(req_id, params)
+                    await websocket.send(json.dumps(response))
+
                 elif method == "eth_blockNumber":
+                    latest = max(self.block_timestamps.keys(), default=25000000)
                     await websocket.send(json.dumps({
-                        "jsonrpc": "2.0", "id": req_id, "result": "0x17d4f00"
+                        "jsonrpc": "2.0", "id": req_id, "result": hex(latest)
                     }))
 
                 elif method == "net_version":
@@ -191,6 +209,27 @@ class MockEthereumNode:
         if removed:
             del self.subscriptions[client_id][sub_id]
         return {"jsonrpc": "2.0", "id": req_id, "result": removed}
+
+    def _handle_get_block(self, req_id, params):
+        """Handle eth_getBlockByNumber — return block with timestamp."""
+        block_number_hex = params[0] if params else "0x0"
+        try:
+            block_number_int = int(block_number_hex, 16)
+        except ValueError:
+            block_number_int = 0
+
+        timestamp = self.block_timestamps.get(block_number_int, 0)
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "number": block_number_hex,
+                "timestamp": hex(timestamp) if timestamp else "0x0",
+                "hash": "0x" + "0" * 64,
+                "parentHash": "0x" + "0" * 64,
+                "transactions": [],
+            } if timestamp else None,
+        }
 
     def _handle_get_transaction(self, req_id, params):
         """Handle eth_getTransactionByHash — return full tx object."""
@@ -245,8 +284,8 @@ class MockEthereumNode:
 
 async def main():
     parser = argparse.ArgumentParser(description="Mock Ethereum WebSocket Node")
-    parser.add_argument("--data", default="data/test_data.csv",
-                        help="Path to test_data.csv (default: data/test_data.csv)")
+    parser.add_argument("--data", default="data/test_data_enriched.csv",
+                        help="Path to enriched CSV (default: data/test_data_enriched.csv)")
     parser.add_argument("--host", default="localhost",
                         help="Host to bind (default: localhost)")
     parser.add_argument("--port", type=int, default=8765,
@@ -257,12 +296,12 @@ async def main():
                         help="Loop the dataset forever (default: play once)")
     args = parser.parse_args()
 
-    transactions = load_transactions(args.data)
+    transactions, block_timestamps = load_transactions(args.data)
     if not transactions:
         print("[error] No transactions loaded. Check your CSV file.")
         sys.exit(1)
 
-    node = MockEthereumNode(transactions, args.delay, args.loop)
+    node = MockEthereumNode(transactions, block_timestamps, args.delay, args.loop)
 
     async with websockets.serve(node.handle_connection, args.host, args.port):
         print(f"[mock] Mock Ethereum Node running on ws://{args.host}:{args.port}")

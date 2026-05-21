@@ -1,15 +1,15 @@
-import { AlertTriangle, TrendingUp, Activity, DollarSign } from "lucide-react";
+import { AlertTriangle, Activity, DollarSign, AlertCircle } from "lucide-react";
 
 interface KpiData {
   activeAlerts: number;
   criticalAlerts: number;
-  maxProfit: number;
-  avgDeviation: number;
+  mediumAlerts: number;
+  maxBorrowed: number;
 }
 
 export function KpiCards({ data }: { data: KpiData }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
       {/* Card 1: Active Alerts */}
       <div className="border border-border/50 bg-background/50 p-4 relative overflow-hidden group hover:border-current transition-colors">
         <div className="absolute top-0 left-0 w-1 h-full bg-border group-hover:bg-current transition-colors" />
@@ -34,29 +34,29 @@ export function KpiCards({ data }: { data: KpiData }) {
         </div>
       </div>
 
-      {/* Card 3: Max Profit */}
+      {/* Card 3: Medium Alerts */}
+      <div className="border border-yellow-500/30 bg-yellow-500/5 p-4 relative overflow-hidden group hover:border-yellow-500 transition-colors">
+        <div className="absolute top-0 left-0 w-1 h-full bg-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.8)]" />
+        <div className="flex justify-between items-start">
+          <div className="space-y-1">
+            <p className="text-xs font-mono text-yellow-500/70 tracking-wider uppercase">Medium Confidence</p>
+            <p className="text-3xl font-bold tracking-tighter text-yellow-500">{data.mediumAlerts}</p>
+          </div>
+          <AlertCircle className="h-5 w-5 text-yellow-500" />
+        </div>
+      </div>
+
+      {/* Card 4: Max Borrowed */}
       <div className="border border-acid-green/30 bg-acid-green/5 p-4 relative overflow-hidden group hover:border-acid-green transition-colors">
         <div className="absolute top-0 left-0 w-1 h-full bg-acid-green shadow-[0_0_10px_rgba(132,204,22,0.8)]" />
         <div className="flex justify-between items-start">
           <div className="space-y-1">
-            <p className="text-xs font-mono text-acid-green/70 tracking-wider uppercase">Max Profit Found</p>
+            <p className="text-xs font-mono text-acid-green/70 tracking-wider uppercase">Max Borrowed</p>
             <p className="text-3xl font-bold tracking-tighter text-acid-green">
-              ${data.maxProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              ${data.maxBorrowed.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
             </p>
           </div>
           <DollarSign className="h-5 w-5 text-acid-green" />
-        </div>
-      </div>
-
-      {/* Card 4: Avg Deviation */}
-      <div className="border border-border/50 bg-background/50 p-4 relative overflow-hidden group hover:border-current transition-colors">
-        <div className="absolute top-0 left-0 w-1 h-full bg-border group-hover:bg-current transition-colors" />
-        <div className="flex justify-between items-start">
-          <div className="space-y-1">
-            <p className="text-xs font-mono text-muted-foreground tracking-wider uppercase">Avg Price Deviation</p>
-            <p className="text-3xl font-bold tracking-tighter">{data.avgDeviation.toFixed(1)}%</p>
-          </div>
-          <TrendingUp className="h-5 w-5 text-muted-foreground" />
         </div>
       </div>
     </div>

@@ -102,6 +102,26 @@ def make_transaction_doc(
     }
 
 
+def save_detection(doc: dict) -> None:
+    """Upsert a stream_processor detection into the transactions collection."""
+    transactions_collection().update_one(
+        {"tx_hash": doc["tx_hash"]},
+        {"$set": {**doc, "detected_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+
+
+def get_recent_detections(limit: int = 50) -> list[dict]:
+    """Return the most recent flash loan detections, newest first."""
+    cursor = (
+        transactions_collection()
+        .find({}, {"_id": 0})
+        .sort("detected_at", DESCENDING)
+        .limit(limit)
+    )
+    return list(cursor)
+
+
 def make_alert_doc(
     tx_hash: str,
     risk_level: str,

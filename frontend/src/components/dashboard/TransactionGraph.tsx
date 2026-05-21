@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { Network } from 'lucide-react';
-import { 
-  ReactFlow, 
-  Background, 
+import {
+  ReactFlow,
+  Background,
   Controls,
   MarkerType,
   BackgroundVariant,
@@ -13,50 +13,60 @@ import type { Detection } from './LiveDetectionsTable';
 
 export function TransactionGraph({ transaction }: { transaction: Detection | null }) {
   const { nodes, edges } = useMemo(() => {
-    if (!transaction || !transaction.cycle_path) return { nodes: [], edges: [] };
+    if (!transaction) return { nodes: [], edges: [] };
 
-    const cycle = transaction.cycle_path;
     const isHigh = transaction.confidence === "HIGH";
-    
-    // Custom node styling
-    const nodeStyle = {
+    const isMedium = transaction.confidence === "MEDIUM";
+    const edgeColor = isHigh ? '#ef4444' : isMedium ? '#eab308' : '#52525b';
+    const borderColor = isHigh ? '#ef4444' : isMedium ? '#eab308' : '#27272a';
+
+    const baseStyle = {
       background: '#09090b',
       color: '#fff',
-      border: `1px solid ${isHigh ? '#ef4444' : '#27272a'}`,
       borderRadius: '0px',
       padding: '10px 20px',
       fontSize: '12px',
       fontFamily: 'monospace',
       letterSpacing: '0.05em',
-      boxShadow: isHigh ? '0 0 10px rgba(239, 68, 68, 0.2)' : 'none',
     };
 
-    const newNodes = cycle.map((token, index) => ({
-      id: `${index}-${token}`,
-      data: { label: token },
-      position: { x: 50 + index * 180, y: 100 },
-      style: nodeStyle,
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-    }));
+    const senderLabel = transaction.from
+      ? `${transaction.from.slice(0, 6)}...${transaction.from.slice(-4)}`
+      : 'Sender';
+    const poolLabel = transaction.protocol || 'Pool';
 
-    const newEdges = [];
-    for (let i = 0; i < cycle.length - 1; i++) {
-      newEdges.push({
-        id: `e${i}-${i+1}`,
-        source: `${i}-${cycle[i]}`,
-        target: `${i+1}-${cycle[i+1]}`,
+    const newNodes = [
+      {
+        id: 'sender',
+        data: { label: senderLabel },
+        position: { x: 80, y: 100 },
+        style: { ...baseStyle, border: `1px solid ${borderColor}` },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+      },
+      {
+        id: 'pool',
+        data: { label: poolLabel },
+        position: { x: 380, y: 100 },
+        style: { ...baseStyle, border: `1px solid ${borderColor}`, boxShadow: isHigh ? '0 0 10px rgba(239,68,68,0.3)' : isMedium ? '0 0 10px rgba(234,179,8,0.3)' : 'none' },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+      },
+    ];
+
+    const newEdges = [
+      {
+        id: 'e-sender-pool',
+        source: 'sender',
+        target: 'pool',
         animated: true,
-        label: `Step ${i+1}`,
-        style: { stroke: isHigh ? '#84cc16' : '#52525b', strokeWidth: 2 },
+        label: `${transaction.token ?? ''} Flash Loan`,
+        style: { stroke: edgeColor, strokeWidth: 2 },
         labelStyle: { fill: '#a1a1aa', fontWeight: 700, fontSize: 10, fontFamily: 'monospace' },
         labelBgStyle: { fill: '#09090b', fillOpacity: 0.8 },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: isHigh ? '#84cc16' : '#52525b',
-        },
-      });
-    }
+        markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor },
+      },
+    ];
 
     return { nodes: newNodes, edges: newEdges };
   }, [transaction]);
@@ -87,10 +97,10 @@ export function TransactionGraph({ transaction }: { transaction: Detection | nul
           HASH: <span className="text-foreground">{transaction.tx_hash.slice(0, 10)}...</span>
         </div>
       </div>
-      
+
       <div className="flex-1 w-full relative">
-        <ReactFlow 
-          nodes={nodes} 
+        <ReactFlow
+          nodes={nodes}
           edges={edges}
           fitView
           fitViewOptions={{ padding: 0.2 }}
@@ -98,38 +108,38 @@ export function TransactionGraph({ transaction }: { transaction: Detection | nul
           minZoom={0.5}
           maxZoom={2}
         >
-          <Background 
-             variant={BackgroundVariant.Lines} 
-             gap={20} 
-             size={1} 
-             color="#27272a" 
-             style={{ opacity: 0.2 }}
+          <Background
+            variant={BackgroundVariant.Lines}
+            gap={20}
+            size={1}
+            color="#27272a"
+            style={{ opacity: 0.2 }}
           />
-          <Controls 
-            showInteractive={false} 
-            className="bg-black border border-border/50 [&>button]:border-b [&>button]:border-border/50 [&>button]:bg-transparent hover:[&>button]:bg-white/10 [&>button>svg]:fill-foreground" 
+          <Controls
+            showInteractive={false}
+            className="bg-black border border-border/50 [&>button]:border-b [&>button]:border-border/50 [&>button]:bg-transparent hover:[&>button]:bg-white/10 [&>button>svg]:fill-foreground"
           />
         </ReactFlow>
       </div>
-      
+
       {/* Footer info panel */}
       <div className="absolute bottom-4 left-4 right-4 z-10 pointer-events-none">
-         <div className="border border-border/50 bg-black/80 backdrop-blur p-4 grid grid-cols-3 gap-4 pointer-events-auto">
-            <div>
-              <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest mb-1">Protocol</p>
-              <p className="font-mono text-sm">{transaction.protocol.toUpperCase()}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest mb-1">Price Dev</p>
-              <p className="font-mono text-sm text-neon-red">{(transaction.price_deviation * 100).toFixed(2)}% WARN</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest mb-1">Target Action</p>
-              <button className="border border-foreground/20 hover:border-foreground/80 px-4 py-1 text-xs font-mono transition-colors">
-                VIEW RAW JSON
-              </button>
-            </div>
-         </div>
+        <div className="border border-border/50 bg-black/80 backdrop-blur p-4 grid grid-cols-3 gap-4 pointer-events-auto">
+          <div>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest mb-1">Protocol</p>
+            <p className="font-mono text-sm">{transaction.protocol.toUpperCase()}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest mb-1">Amount Borrowed</p>
+            <p className="font-mono text-sm text-acid-green">${transaction.amount_usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest mb-1">Target Action</p>
+            <button className="border border-foreground/20 hover:border-foreground/80 px-4 py-1 text-xs font-mono transition-colors">
+              VIEW RAW JSON
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

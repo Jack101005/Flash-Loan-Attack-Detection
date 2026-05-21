@@ -84,3 +84,5 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+.agent/
+.windsurf/

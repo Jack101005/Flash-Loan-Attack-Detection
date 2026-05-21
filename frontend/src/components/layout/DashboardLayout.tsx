@@ -31,7 +31,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-2"
             >
               <Terminal className="h-4 w-4" />
-              API Gateway
+              Transaction Detail
             </Link>
           </nav>
           <div className="ml-auto text-xs font-mono text-acid-green animate-pulse hidden sm:flex items-center gap-2">
@@ -45,7 +45,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <main className="flex-1 overflow-auto bg-zinc-950/50 relative">
         {/* Subtle grid background for tech feel */}
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
-        
+
         <div className="relative p-6 max-w-[1600px] mx-auto space-y-6">
           {children}
         </div>

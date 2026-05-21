@@ -9,19 +9,23 @@ services:
       - 2181
     networks:
       - broker_net
-  
+
   kafka:
     restart: always
     image: confluentinc/cp-kafka:7.6.1
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_LOG_RETENTION_HOURS: 1
       KAFKA_LOG_RETENTION_BYTES: 536870912
     ports:
       - "9092:9092"
+      - "9094:9094"
       - "9101:9101"
     networks:
       - broker_net
@@ -36,11 +40,11 @@ services:
     networks:
       - db_net
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASS}", "ping"]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASS}", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
-  
+
   redisinsight:
     image: redis/redisinsight:latest
     container_name: redisinsight
@@ -70,7 +74,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASS=${REDIS_PASS}
     networks:
-      - db_net                      
+      - db_net
 
   spark_master:
     image: apache/spark:3.5.0
@@ -152,7 +156,7 @@ services:
     image: mongo-express
     restart: always
     ports:
-      - "8082:8081"  # Map local 8082 to container 8081
+      - "8082:8081" # Map local 8082 to container 8081
     environment:
       - ME_CONFIG_MONGODB_URL=${MONGODB_URI}
       - ME_CONFIG_MONGODB_SSL=true
