@@ -73,6 +73,7 @@ tsconfig.tsbuildinfo
 # System files
 .DS_Store
 Thumbs.db
+.vscode
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
@@ -86,3 +87,4 @@ Thumbs.db
 *.sw?
 .agent/
 .windsurf/
+.claude/
