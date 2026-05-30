@@ -77,7 +77,7 @@ services:
 
   # --- 5. Spark Master (Apache) ---
   spark-master:
-    image: apache/spark:latest
+    image: apache/spark:3.5.0
     container_name: spark-master
     ports:
       - "8080:8080"
@@ -93,7 +93,7 @@ services:
 
   # --- 6 & 7. Spark Workers ---
   spark-worker-1:
-    image: apache/spark:latest
+    image: apache/spark:3.5.0
     networks:
       - flashloan-network
     entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
@@ -102,7 +102,7 @@ services:
         condition: service_healthy
 
   spark-worker-2:
-    image: apache/spark:latest
+    image: apache/spark:3.5.0
     networks:
       - flashloan-network
     entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
@@ -138,7 +138,9 @@ services:
   processing-job:
     build: ../processing
     container_name: spark_processing_job
-    env_file: .env
+    env_file:
+      - .env
+      - ../.env
     networks:
       - flashloan-network
     depends_on:

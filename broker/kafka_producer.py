@@ -54,7 +54,7 @@ def ensure_topic(bootstrap: str = BOOTSTRAP_SERVERS_HOST) -> None:
 
 
 # ── Producer factory ───────────────────────────────────────────────────────────
-def create_producer(bootstrap: str = BOOTSTRAP_SERVERS_HOST) -> Producer | None:
+def create_producer(bootstrap: str = BOOTSTRAP_SERVERS_HOST) -> Producer:
     """
     Build and return a confluent_kafka.Producer.
 
