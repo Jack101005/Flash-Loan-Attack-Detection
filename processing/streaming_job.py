@@ -14,7 +14,7 @@ Pipeline (distributed):
     Spark partitions (parallel)
         ↓ decode + price lookup (UDF)
         ↓ score confidence
-        ↓ foreachBatch
+        ↓ foreachBatch → foreachPartition (distributed write)
     MongoDB detections collection
 
 Usage:
@@ -212,53 +212,66 @@ def get_protocol_udf(selector: str) -> str:
 protocol_udf = udf(get_protocol_udf, StringType())
 
 
-# ─── foreachBatch sink: Write detections to MongoDB ───────────────────────────
+# ─── foreachBatch sink: Write detections to MongoDB (DISTRIBUTED) ─────────────
+def _write_partition_to_mongo(rows_iter, batch_id):
+    """Executor-side writer. Each Spark partition opens its own MongoClient
+    and bulk-writes its rows directly to Atlas. No collect() to driver.
+
+    This is what makes the DB write step distributed: with N partitions and
+    N executors, N writers run in parallel — instead of the driver being a
+    serial bottleneck.
+    """
+    import certifi
+    from pymongo import MongoClient, UpdateOne
+    from pymongo.errors import PyMongoError
+    import time as _time
+
+    client = MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        tls=True,
+        tlsCAFile=certifi.where(),
+    )
+    try:
+        coll = client[MONGO_DB][MONGO_COLL]
+        ops = []
+        for r in rows_iter:
+            doc = {
+                "tx_hash":      r["tx_hash"],
+                "protocol":     r["protocol"],
+                "from":         r["sender"],
+                "pool":         r["pool"],
+                "token":        r["primary_symbol"],
+                "amount_human": r["primary_amount_human"],
+                "amount_usd":   round(r["amount_usd"] or 0.0, 2),
+                "confidence":   r["confidence"],
+                "timestamp":    r["tx_timestamp"],
+                "batch_id":     batch_id,
+                "processed_at": int(_time.time()),
+            }
+            ops.append(UpdateOne({"tx_hash": doc["tx_hash"]}, {"$set": doc}, upsert=True))
+
+        if ops:
+            try:
+                # bulk_write = 1 round-trip per partition, not N round-trips
+                coll.bulk_write(ops, ordered=False)
+                # NOTE: this print appears in the EXECUTOR (worker) log, not the driver log.
+                # That is the proof the write is distributed.
+                print(f"[batch {batch_id}] partition wrote {len(ops)} detections to MongoDB")
+            except PyMongoError as e:
+                print(f"[batch {batch_id}] partition Mongo bulk_write failed: {e}")
+    finally:
+        client.close()
+
+
 def write_to_mongo(batch_df, batch_id):
-    """Called for each micro-batch. Writes detections to MongoDB."""
+    """foreachBatch sink. Dispatches the actual writes to executors via
+    foreachPartition instead of pulling the batch to the driver.
+    """
     if batch_df.rdd.isEmpty():
         return
-
-    rows = batch_df.collect()
-    if not rows:
-        return
-
-    try:
-        import certifi
-        from pymongo import MongoClient
-        client = MongoClient(
-            MONGO_URI,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=5000,
-            tls=True,
-            tlsCAFile=certifi.where(),
-        )
-        db = client[MONGO_DB]
-        coll = db[MONGO_COLL]
-
-        docs = []
-        for r in rows:
-            doc = {
-                "tx_hash":     r["tx_hash"],
-                "protocol":    r["protocol"],
-                "from":        r["sender"],
-                "pool":        r["pool"],
-                "token":       r["primary_symbol"],
-                "amount_human": r["primary_amount_human"],
-                "amount_usd":  round(r["amount_usd"] or 0.0, 2),
-                "confidence":  r["confidence"],
-                "timestamp":   r["tx_timestamp"],
-                "batch_id":    batch_id,
-                "processed_at": int(time.time()),
-            }
-            docs.append(doc)
-
-        if docs:
-            for d in docs:
-                coll.update_one({"tx_hash": d["tx_hash"]}, {"$set": d}, upsert=True)
-            print(f"[batch {batch_id}] Wrote {len(docs)} detections to MongoDB")
-
-    except Exception as e:
-        print(f"[batch {batch_id}] MongoDB write failed: {e}")
+    batch_df.foreachPartition(lambda it: _write_partition_to_mongo(it, batch_id))
 
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
@@ -357,7 +370,7 @@ def main():
                      .trigger(processingTime="5 seconds")
                      .start())
 
-    # Write to MongoDB via foreachBatch
+    # Write to MongoDB via foreachBatch → foreachPartition (distributed)
     mongo_query = (detections.writeStream
                    .outputMode("append")
                    .foreachBatch(write_to_mongo)

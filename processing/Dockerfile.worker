@@ -1,0 +1,8 @@
+FROM apache/spark:3.5.0
+USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3-pip && \
+    rm -rf /var/lib/apt/lists/* && \
+    python3 -m pip install --no-cache-dir \
+        certifi pymongo redis requests
+USER spark

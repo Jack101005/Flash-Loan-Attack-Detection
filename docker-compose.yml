@@ -50,7 +50,7 @@ services:
     container_name: redisinsight
     restart: always
     ports:
-      - "5540:5540" # Map local port 5540 to container port 5540
+      - "5540:5540"
     networks:
       - db_net
     depends_on:
@@ -76,15 +76,13 @@ services:
     networks:
       - db_net
 
-  spark_master:
+  spark-master:
     image: apache/spark:3.5.0
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+      --host spark-master --port 7077 --webui-port 8080
     environment:
-      SPARK_MODE: master
-      SPARK_RPC_AUTHENTICATION_ENABLED: no
-      SPARK_RPC_ENCRYPTION_ENABLED: no
-      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no
-      SPARK_SSL_ENABLED: no
-      SPARK_USER: spark
+      SPARK_MASTER_OPTS: "-Dspark.worker.timeout=15"
     ports:
       - "8080:8080"
     expose:
@@ -92,24 +90,21 @@ services:
     networks:
       - broker_net
 
-  spark_worker:
-    image: apache/spark:3.5.0
-    environment:
-      SPARK_MODE: worker
-      SPARK_MASTER_URL: spark://spark_master:7077
-      SPARK_WORKER_MEMORY: 1G
-      SPARK_WORKER_CORES: 1
-      SPARK_RPC_AUTHENTICATION_ENABLED: no
-      SPARK_RPC_ENCRYPTION_ENABLED: no
-      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no
-      SPARK_SSL_ENABLED: no
-      SPARK_USER: spark
-    volumes:
-      - spark_checkpoint:/tmp/spark_checkpoint
+  spark-worker:
+    build:
+      context: ./processing
+      dockerfile: Dockerfile.worker
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077 --cores 1 --memory 1G --webui-port 8081
+    depends_on:
+      - spark-master
     expose:
       - 8081
     networks:
       - broker_net
+    volumes:
+      - spark_checkpoint:/tmp/spark_checkpoint
 
   frontend:
     build:
@@ -156,7 +151,7 @@ services:
     image: mongo-express
     restart: always
     ports:
-      - "8082:8081" # Map local 8082 to container 8081
+      - "8082:8081"
     environment:
       - ME_CONFIG_MONGODB_URL=${MONGODB_URI}
       - ME_CONFIG_MONGODB_SSL=true
