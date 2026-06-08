@@ -18,8 +18,8 @@ from confluent_kafka import TopicPartition
 logger = logging.getLogger(__name__)
 
 # ── Bootstrap ──────────────────────────────────────────────────────────────────
-BOOTSTRAP_SERVERS_HOST   = "localhost:9094"
-BOOTSTRAP_SERVERS_DOCKER = "kafka:9092"
+BOOTSTRAP_SERVERS_HOST   = "localhost:9094,localhost:9095,localhost:9096"
+BOOTSTRAP_SERVERS_DOCKER = "kafka-1:9092,kafka-2:9092,kafka-3:9092"
 
 # ── Group registry ─────────────────────────────────────────────────────────────
 @dataclass

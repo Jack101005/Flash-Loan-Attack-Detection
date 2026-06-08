@@ -10,23 +10,85 @@ services:
     networks:
       - broker_net
 
-  kafka:
+  kafka-1:
     restart: always
     image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - zookeeper
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9094
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:9092,PLAINTEXT_HOST://localhost:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_NUM_PARTITIONS: 4
       KAFKA_LOG_RETENTION_HOURS: 1
       KAFKA_LOG_RETENTION_BYTES: 536870912
     ports:
-      - "9092:9092"
       - "9094:9094"
-      - "9101:9101"
+    networks:
+      - broker_net
+
+  kafka-2:
+    restart: always
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9095
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:9092,PLAINTEXT_HOST://localhost:9095
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_NUM_PARTITIONS: 4
+      KAFKA_LOG_RETENTION_HOURS: 1
+      KAFKA_LOG_RETENTION_BYTES: 536870912
+    ports:
+      - "9095:9095"
+    networks:
+      - broker_net
+
+  kafka-3:
+    restart: always
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9096
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:9092,PLAINTEXT_HOST://localhost:9096
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_NUM_PARTITIONS: 4
+      KAFKA_LOG_RETENTION_HOURS: 1
+      KAFKA_LOG_RETENTION_BYTES: 536870912
+    ports:
+      - "9096:9096"
+    networks:
+      - broker_net
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: always
+    ports:
+      - "8082:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
     networks:
       - broker_net
 
@@ -38,7 +100,7 @@ services:
     env_file:
       - .env
     networks:
-      - db_net
+      - broker_net
     healthcheck:
       test: [ "CMD", "redis-cli", "-a", "${REDIS_PASS}", "ping" ]
       interval: 5s
@@ -52,32 +114,17 @@ services:
     ports:
       - "5540:5540"
     networks:
-      - db_net
+      - broker_net
     depends_on:
       - redis
     volumes:
       - redisinsight_data:/data
 
-  price-feed:
-    build:
-      context: ./cache
-      dockerfile: Dockerfile
-    container_name: price-feed
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASS=${REDIS_PASS}
-    networks:
-      - db_net
+
 
   spark-master:
     image: apache/spark:3.5.0
+    container_name: spark-master
     command: >
       /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
       --host spark-master --port 7077 --webui-port 8080
@@ -99,6 +146,8 @@ services:
       spark://spark-master:7077 --cores 1 --memory 1G --webui-port 8081
     depends_on:
       - spark-master
+    deploy:
+      replicas: 4
     expose:
       - 8081
     networks:
@@ -106,63 +155,35 @@ services:
     volumes:
       - spark_checkpoint:/tmp/spark_checkpoint
 
-  frontend:
+  processing-job:
     build:
-      context: ./frontend
+      context: ./processing
       dockerfile: Dockerfile
+    container_name: processing-job
+    restart: on-failure
     ports:
-      - "3000:3000"
+      - "4040:4040"
     environment:
-      - VITE_API_URL=http://backend:8000
-    networks:
-      - broker_net
-    depends_on:
-      - backend
-
-  backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - KAFKA_BROKER=kafka:9092
-      - REDIS_URL=redis://default:${REDIS_PASS}@redis:6379
-    networks:
-      - broker_net
-      - db_net
-    depends_on:
-      - kafka
-      - redis
-
-  mongo:
-    build:
-      context: ./storage
-      dockerfile: Dockerfile
-    environment:
+      - KAFKA_BOOTSTRAP=kafka-1:9092,kafka-2:9092,kafka-3:9092
       - MONGODB_URI=${MONGODB_URI}
-      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-flash_loan_detection}
-    networks:
-      - db_net
+      - MONGODB_FLASHLOAN_NAME=${MONGODB_FLASHLOAN_NAME:-flash_loan_detection}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASS=${REDIS_PASS}
+      - SPARK_MASTER=spark://spark-master:7077
     depends_on:
-      - backend
-
-  mongo-express:
-    image: mongo-express
-    restart: always
-    ports:
-      - "8082:8081"
-    environment:
-      - ME_CONFIG_MONGODB_URL=${MONGODB_URI}
-      - ME_CONFIG_MONGODB_SSL=true
-      - ME_CONFIG_MONGODB_AUTH_DATABASE=admin
-      - ME_CONFIG_BASICAUTH_USERNAME=admin
-      - ME_CONFIG_BASICAUTH_PASSWORD=pass
+      - spark-master
+      - spark-worker
+      - kafka-1
+      - kafka-2
+      - kafka-3
+      - redis
     networks:
-      - db_net
+      - broker_net
+    volumes:
+      - spark_checkpoint:/tmp/spark_checkpoint
 
 networks:
-  db_net:
   broker_net:
 
 volumes:

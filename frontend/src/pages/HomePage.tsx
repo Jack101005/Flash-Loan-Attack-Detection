@@ -14,31 +14,26 @@ export default function HomePage() {
   const [selectedTx, setSelectedTx] = useState<Detection | null>(null);
 
   useEffect(() => {
-    const fetchLiveDetections = async () => {
-      try {
-        const response = await fetch(`${API_URL}/live-detections`);
-        if (!response.ok) throw new Error("Network response was not ok");
+    const eventSource = new EventSource(`${API_URL}/stream/detections`);
 
-        const data: Detection[] = await response.json();
-        setDetections(data);
+    eventSource.addEventListener("detections", (event) => {
+      const data: Detection[] = JSON.parse(event.data);
+      setDetections(data);
+    });
 
-        // Auto-select the first transaction if none is selected
-        if (data.length > 0 && !selectedTx) {
-          setSelectedTx(data[0]);
-        }
-      } catch (error) {
-        console.error("Error fetching live detections:", error);
-      }
+    eventSource.onerror = () => {
+      console.warn("SSE connection lost, auto-reconnecting...");
     };
 
-    // Initial fetch
-    fetchLiveDetections();
+    return () => eventSource.close();
+  }, []);
 
-    // Poll Redis via Backend every 5 seconds
-    const interval = setInterval(fetchLiveDetections, 5000);
-
-    return () => clearInterval(interval);
-  }, [selectedTx]);
+  // Auto-select first transaction when detections update
+  useEffect(() => {
+    if (detections.length > 0 && !selectedTx) {
+      setSelectedTx(detections[0]);
+    }
+  }, [detections]);
 
   const kpiData = {
     activeAlerts: detections.length,

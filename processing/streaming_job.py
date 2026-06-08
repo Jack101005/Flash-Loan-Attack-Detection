@@ -42,6 +42,7 @@ MONGO_DB        = os.getenv("MONGODB_FLASHLOAN_NAME", "flash_loan_detection")
 MONGO_COLL      = "transactions"
 REDIS_HOST      = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT      = int(os.getenv("REDIS_PORT", 6379))
+REDIS_PASS      = os.getenv("REDIS_PASS", "")
 CHECKPOINT_DIR  = "/tmp/spark-checkpoints/flash-loan-detection"
 
 
@@ -164,30 +165,70 @@ def get_price_usd_udf(symbol: str, timestamp_unix: float) -> float:
     if symbol not in ("WETH", "WBTC"):
         return 0.0
 
-    # Try Redis cache first
+    date_str = "UNKNOWN"
     try:
-        import redis
-        client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT,
-                             decode_responses=True, socket_connect_timeout=2)
         date_str = datetime.fromtimestamp(timestamp_unix, tz=timezone.utc).strftime("%d-%m-%Y")
-        cache_key = f"hist_price:{symbol}:{date_str}"
-        cached = client.get(cache_key)
-        if cached:
-            return float(cached)
+    except Exception as e:
+        print(f"[price_udf] ❌ Failed to parse timestamp {timestamp_unix}: {e}")
+        print(f"[price_udf] ⚠️  FALLBACK used for {symbol} (bad timestamp)")
+        return FALLBACK_PRICES.get(symbol, 0.0)
 
-        # Cache miss → CoinGecko
+    # ── Step 1: Try Redis cache ────────────────────────────────────────────────
+    redis_client = None
+    try:
+        import redis as redis_lib
+        redis_client = redis_lib.Redis(
+            host=REDIS_HOST, port=REDIS_PORT,
+            password=REDIS_PASS or None,
+            decode_responses=True, socket_connect_timeout=2
+        )
+        cache_key = f"hist_price:{symbol}:{date_str}"
+        cached = redis_client.get(cache_key)
+        if cached:
+            print(f"[price_udf] ✅ Redis HIT  {symbol} @ {date_str} = {cached}")
+            return float(cached)
+        print(f"[price_udf] 🔍 Redis MISS {symbol} @ {date_str} → trying CoinGecko")
+    except Exception as e:
+        print(f"[price_udf] ⚠️  Redis ERROR for {symbol} @ {date_str}: {type(e).__name__}: {e}")
+
+    # ── Step 2: Try CoinGecko ──────────────────────────────────────────────────
+    try:
         import requests
         coin_id = {"WETH": "ethereum", "WBTC": "bitcoin"}[symbol]
-        url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/history?date={date_str}&localization=false"
+        url = (
+            f"https://api.coingecko.com/api/v3/coins/{coin_id}/history"
+            f"?date={date_str}&localization=false"
+        )
         resp = requests.get(url, timeout=5)
-        if resp.ok:
-            price = float(resp.json()["market_data"]["current_price"]["usd"])
-            client.set(cache_key, price, ex=86400)  # 24h TTL
-            return price
-    except Exception:
-        pass
 
-    return FALLBACK_PRICES.get(symbol, 0.0)
+        if resp.ok:
+            data = resp.json()
+            market_data = data.get("market_data")
+            if not market_data:
+                print(f"[price_udf] ⚠️  CoinGecko OK but no market_data for {symbol} @ {date_str}")
+                print(f"[price_udf] 📄 Response keys: {list(data.keys())}")
+            else:
+                price = float(market_data["current_price"]["usd"])
+                print(f"[price_udf] ✅ CoinGecko  {symbol} @ {date_str} = {price}")
+                # Write-back to Redis if available
+                if redis_client:
+                    try:
+                        redis_client.set(cache_key, price, ex=86400)
+                    except Exception as e:
+                        print(f"[price_udf] ⚠️  Redis write-back failed: {e}")
+                return price
+        else:
+            print(
+                f"[price_udf] ❌ CoinGecko HTTP {resp.status_code} for {symbol} @ {date_str}"
+                f" | body: {resp.text[:200]}"
+            )
+    except Exception as e:
+        print(f"[price_udf] ❌ CoinGecko EXCEPTION for {symbol} @ {date_str}: {type(e).__name__}: {e}")
+
+    # ── Step 3: Fallback ───────────────────────────────────────────────────────
+    fallback = FALLBACK_PRICES.get(symbol, 0.0)
+    print(f"[price_udf] ⚠️  FALLBACK used for {symbol} @ {date_str} = {fallback}")
+    return fallback
 
 price_udf = udf(get_price_usd_udf, DoubleType())
 
@@ -314,7 +355,7 @@ def main():
                   .format("kafka")
                   .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP)
                   .option("subscribe", KAFKA_TOPIC)
-                  .option("startingOffsets", "latest")
+                  .option("startingOffsets", "earliest")
                   .option("failOnDataLoss", "false")
                   .load())
 

@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 # ── Bootstrap addresses ────────────────────────────────────────────────────────
 # Use 'kafka:9092'     when running inside Docker (container → container)
 # Use 'localhost:9094' when running listener.py directly on your host machine
-BOOTSTRAP_SERVERS_DOCKER = "kafka:9092"
-BOOTSTRAP_SERVERS_HOST   = "localhost:9094"
+BOOTSTRAP_SERVERS_DOCKER = "kafka-1:9092,kafka-2:9092,kafka-3:9092"
+BOOTSTRAP_SERVERS_HOST   = "localhost:9094,localhost:9095,localhost:9096"
 
 TOPIC_NAME   = "raw_txns"
 NUM_PARTITIONS = 4
@@ -37,7 +37,7 @@ def ensure_topic(bootstrap: str = BOOTSTRAP_SERVERS_HOST) -> None:
     topic = NewTopic(
         TOPIC_NAME,
         num_partitions=NUM_PARTITIONS,
-        replication_factor=1,
+        replication_factor=3,
         config={"retention.ms": str(60 * 60 * 1000)},  # 1 hour
     )
     futures = admin.create_topics([topic])

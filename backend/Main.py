@@ -1,11 +1,14 @@
 import sys
 import os
+import asyncio
+import json
 
 # Allow importing from the project root (e.g. storage.mongo_store)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from typing import Optional
 from pydantic import BaseModel
 
@@ -126,26 +129,53 @@ def decode(body: DecodeRequest):
         cycle_path=doc.get("cycle_path", []),
     )
 
-@app.get("/live-detections")
-def get_live_detections():
-    """Fetch the latest flash loan detections from MongoDB."""
-    try:
-        docs = get_recent_detections(50)
-        return [
-            {
-                "tx_hash":      d.get("tx_hash", "0x000"),
-                "is_suspicious": True,
-                "confidence":   d.get("confidence", "LOW"),
-                "cycle_path":   d.get("cycle_path", []),
-                "amount_usd":   float(d.get("amount_usd", 0)),
-                "total_usd":    float(d.get("total_usd", 0)),
-                "protocol":     d.get("protocol", "Unknown"),
-                "timestamp":    int(d.get("timestamp", 0)),
-                "from":         d.get("from", ""),
-                "token":        d.get("token", ""),
-            }
-            for d in docs
-        ]
-    except Exception as e:
-        print(f"Error fetching from MongoDB: {e}")
-        return []
+@app.get("/stream/detections")
+async def stream_detections():
+    """SSE endpoint — stream flash loan detections to frontend."""
+
+    async def event_generator():
+        last_fingerprint = None
+        first_poll = True
+        while True:
+            try:
+                docs = get_recent_detections(50)
+                detections = [
+                    {
+                        "tx_hash":       d.get("tx_hash", "0x000"),
+                        "is_suspicious": True,
+                        "confidence":    d.get("confidence", "LOW"),
+                        "cycle_path":    d.get("cycle_path", []),
+                        "amount_usd":    float(d.get("amount_usd", 0)),
+                        "total_usd":     float(d.get("total_usd", 0)),
+                        "protocol":      d.get("protocol", "Unknown"),
+                        "timestamp":     int(d.get("timestamp", 0)),
+                        "from":          d.get("from", ""),
+                        "token":         d.get("token", ""),
+                    }
+                    for d in docs
+                ]
+
+                # Fingerprint = count + newest tx_hash (detects inserts, deletes, and updates)
+                fingerprint = f"{len(detections)}:{detections[0]['tx_hash'] if detections else ''}"
+
+                if first_poll or fingerprint != last_fingerprint:
+                    yield f"event: detections\ndata: {json.dumps(detections)}\n\n"
+                    last_fingerprint = fingerprint
+                    first_poll = False
+                else:
+                    yield ": heartbeat\n\n"
+
+            except Exception as e:
+                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
