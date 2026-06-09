@@ -34,7 +34,7 @@ from pyspark.sql.types import (
     ArrayType, IntegerType, MapType
 )
 
-# ─── Configuration ────────────────────────────────────────────────────────────
+# Configuration
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
 KAFKA_TOPIC     = "raw_txns"
 MONGO_URI       = os.getenv("MONGODB_URI", "mongodb://mongodb:27017")
@@ -46,7 +46,7 @@ REDIS_PASS      = os.getenv("REDIS_PASS", "")
 CHECKPOINT_DIR  = "/tmp/spark-checkpoints/flash-loan-detection"
 
 
-# ─── Constants (broadcast to workers) ─────────────────────────────────────────
+# Constants (broadcast to workers)
 TOKEN_SYMBOLS = {
     "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "USDC",
     "0xdac17f958d2ee523a2206206994597c13d831ec7": "USDT",
@@ -76,7 +76,7 @@ PROTOCOL_BY_SELECTOR = {
 }
 
 
-# ─── UDF: Decode flash loan calldata ──────────────────────────────────────────
+# UDF: Decode flash loan calldata
 def decode_flash_loan_udf(input_hex: str, selector: str) -> dict:
     """Decode raw calldata into structured flash loan info.
     Runs on Spark workers in parallel.
@@ -130,7 +130,7 @@ decoded_schema = StructType([
 decode_udf = udf(decode_flash_loan_udf, decoded_schema)
 
 
-# ─── UDF: Get token symbol from address ───────────────────────────────────────
+# UDF: Get token symbol from address
 def get_symbol_udf(asset: str) -> str:
     if asset is None:
         return "UNKNOWN"
@@ -139,7 +139,7 @@ def get_symbol_udf(asset: str) -> str:
 symbol_udf = udf(get_symbol_udf, StringType())
 
 
-# ─── UDF: Convert raw amount to human-readable using decimals ─────────────────
+# UDF: Convert raw amount to human-readable using decimals
 def to_human_udf(amount_str: str, symbol: str) -> float:
     if not amount_str or not symbol:
         return 0.0
@@ -152,7 +152,7 @@ def to_human_udf(amount_str: str, symbol: str) -> float:
 human_amount_udf = udf(to_human_udf, DoubleType())
 
 
-# ─── UDF: Get historical USD price (Redis cache + CoinGecko + fallback) ───────
+# UDF: Get historical USD price (Redis cache + CoinGecko + fallback)
 def get_price_usd_udf(symbol: str, timestamp_unix: float) -> float:
     """Fetch USD price at given timestamp.
 
@@ -173,7 +173,7 @@ def get_price_usd_udf(symbol: str, timestamp_unix: float) -> float:
         print(f"[price_udf] ⚠️  FALLBACK used for {symbol} (bad timestamp)")
         return FALLBACK_PRICES.get(symbol, 0.0)
 
-    # ── Step 1: Try Redis cache ────────────────────────────────────────────────
+    # Step 1: Try Redis cache
     redis_client = None
     try:
         import redis as redis_lib
@@ -191,7 +191,7 @@ def get_price_usd_udf(symbol: str, timestamp_unix: float) -> float:
     except Exception as e:
         print(f"[price_udf] ⚠️  Redis ERROR for {symbol} @ {date_str}: {type(e).__name__}: {e}")
 
-    # ── Step 2: Try CoinGecko ──────────────────────────────────────────────────
+    # Step 2: Try CoinGecko
     try:
         import requests
         coin_id = {"WETH": "ethereum", "WBTC": "bitcoin"}[symbol]
@@ -225,7 +225,7 @@ def get_price_usd_udf(symbol: str, timestamp_unix: float) -> float:
     except Exception as e:
         print(f"[price_udf] ❌ CoinGecko EXCEPTION for {symbol} @ {date_str}: {type(e).__name__}: {e}")
 
-    # ── Step 3: Fallback ───────────────────────────────────────────────────────
+    # Step 3: Fallback
     fallback = FALLBACK_PRICES.get(symbol, 0.0)
     print(f"[price_udf] ⚠️  FALLBACK used for {symbol} @ {date_str} = {fallback}")
     return fallback
@@ -233,7 +233,7 @@ def get_price_usd_udf(symbol: str, timestamp_unix: float) -> float:
 price_udf = udf(get_price_usd_udf, DoubleType())
 
 
-# ─── UDF: Score confidence based on USD value ─────────────────────────────────
+# UDF: Score confidence based on USD value
 def score_confidence_udf(amount_usd: float) -> str:
     if amount_usd is None:
         return "LOW"
@@ -246,14 +246,14 @@ def score_confidence_udf(amount_usd: float) -> str:
 confidence_udf = udf(score_confidence_udf, StringType())
 
 
-# ─── UDF: Get protocol name from selector ─────────────────────────────────────
+# UDF: Get protocol name from selector
 def get_protocol_udf(selector: str) -> str:
     return PROTOCOL_BY_SELECTOR.get(selector, "Unknown")
 
 protocol_udf = udf(get_protocol_udf, StringType())
 
 
-# ─── foreachBatch sink: Write detections to MongoDB (DISTRIBUTED) ─────────────
+# foreachBatch sink: Write detections to MongoDB (DISTRIBUTED)
 def _write_partition_to_mongo(rows_iter, batch_id):
     """Executor-side writer. Each Spark partition opens its own MongoClient
     and bulk-writes its rows directly to Atlas. No collect() to driver.
@@ -315,7 +315,7 @@ def write_to_mongo(batch_df, batch_id):
     batch_df.foreachPartition(lambda it: _write_partition_to_mongo(it, batch_id))
 
 
-# ─── Main entry point ─────────────────────────────────────────────────────────
+# Main entry point
 def main():
     print("=" * 60)
     print("  PySpark Flash Loan Streaming Job (P3)")

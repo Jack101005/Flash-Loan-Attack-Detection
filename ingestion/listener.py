@@ -53,9 +53,7 @@ from web3.exceptions import TransactionNotFound
 from config import WATCHLIST, SELECTORS
 
 
-# ──────────────────────────────────────────────────────────────
 # ABI loading — from abis/ directory or inline fallback
-# ──────────────────────────────────────────────────────────────
 def load_abi(filename: str) -> list:
     """
     Load ABI from abis/ directory. Checks two locations:
@@ -130,9 +128,7 @@ UNISWAP_V3_ABI = load_abi("uniswap_v3_pool.json") or [
 ]
 
 
-# ──────────────────────────────────────────────────────────────
 # Stats tracking
-# ──────────────────────────────────────────────────────────────
 class Stats:
     def __init__(self):
         self.total_seen = 0
@@ -163,9 +159,7 @@ class Stats:
         print(f"{'='*60}\n")
 
 
-# ──────────────────────────────────────────────────────────────
 # Core listener session — one WebSocket connection lifecycle
-# ──────────────────────────────────────────────────────────────
 async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_producer=None):
     """
     Run a single WebSocket session. Returns normally on connection
@@ -199,7 +193,7 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_produ
             tx_hash = msg["result"]
             stats.total_seen += 1
 
-            # --- Deduplication ---
+            # Deduplication
             tx_hash_str = tx_hash.hex() if isinstance(tx_hash, bytes) else str(tx_hash)
             if tx_hash_str in seen_hashes:
                 stats.duplicates += 1
@@ -208,7 +202,7 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_produ
             if len(seen_hashes) > DEDUP_MAX_SIZE:
                 seen_hashes.clear()
 
-            # --- Fetch full transaction ---
+            # Fetch full transaction
             try:
                 tx = await w3.eth.get_transaction(tx_hash)
             except TransactionNotFound:
@@ -219,14 +213,14 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_produ
             if not tx or not tx.get("to"):
                 continue
 
-            # --- Filter 1: Contract address ---
+            # Filter 1: Contract address
             to_addr = tx["to"].lower()
             if to_addr not in WATCHLIST:
                 continue
             stats.filtered_address += 1
             protocol_pool = WATCHLIST[to_addr]
 
-            # --- Filter 2: Function selector ---
+            # Filter 2: Function selector
             input_data = tx.get("input", "0x")
             if isinstance(input_data, bytes):
                 input_hex = "0x" + input_data.hex()
@@ -241,7 +235,7 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_produ
             protocol_method = SELECTORS[selector]
             stats.detected += 1
 
-            # --- Resolve block timestamp (historical price lookup) ---
+            # Resolve block timestamp (historical price lookup)
             block_timestamp = time.time()
             block_number = tx.get("blockNumber")
             if block_number is not None:
@@ -251,7 +245,7 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_produ
                 except Exception:
                     pass
 
-            # --- Build output (per technical spec) ---
+            # Build output (per technical spec)
             out_data = {
                 "tx_hash": tx_hash_str,
                 "from": tx.get("from", ""),
@@ -273,7 +267,7 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_produ
             print(f"  From:      {tx.get('from', 'unknown')}")
             print(f"  Selector:  {selector}")
 
-            # --- Decode flash loan parameters ---
+            # Decode flash loan parameters
             decoder = decoders.get(protocol_method)
             if decoder:
                 try:
@@ -302,7 +296,7 @@ async def _run_session(wss_url: str, stats: Stats, seen_hashes: set, kafka_produ
 
             print()
 
-            # ── Kafka produce ──────────────────────────────────────────────────
+            # Kafka produce
             if kafka_producer:
                 try:
                     produce_message(kafka_producer, "raw_txns", tx_hash_str, out_data)
@@ -328,9 +322,7 @@ def _write_kafka_failure(out_data: dict) -> None:
         f.write(json.dumps(out_data) + "\n")
 
 
-# ──────────────────────────────────────────────────────────────
 # Reconnect wrapper with exponential backoff
-# ──────────────────────────────────────────────────────────────
 async def log_mempool(wss_url: str, max_retries: int = 5, use_kafka: bool = True):
     """
     Run the listener with automatic reconnection on WebSocket drops.
@@ -349,7 +341,7 @@ async def log_mempool(wss_url: str, max_retries: int = 5, use_kafka: bool = True
     retry_count = 0
     BASE_DELAY = 1.0
 
-    # ── Kafka setup ────────────────────────────────────────────────────────────
+    # Kafka setup
     kafka_producer = None
     if use_kafka and _KAFKA_AVAILABLE:
         print("[listener] Connecting to Kafka...")
@@ -385,7 +377,7 @@ async def log_mempool(wss_url: str, max_retries: int = 5, use_kafka: bool = True
                 if stats.total_seen > prev_seen:
                     retry_count = 0
 
-            # --- Reconnect with exponential backoff ---
+            # Reconnect with exponential backoff
             retry_count += 1
             stats.reconnections += 1
 
@@ -415,9 +407,7 @@ async def log_mempool(wss_url: str, max_retries: int = 5, use_kafka: bool = True
     stats.summary()
 
 
-# ──────────────────────────────────────────────────────────────
 # Entry point
-# ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Flash Loan Mempool Listener")
     parser.add_argument(

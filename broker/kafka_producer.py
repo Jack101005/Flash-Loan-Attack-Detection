@@ -17,7 +17,7 @@ from confluent_kafka.admin import AdminClient, NewTopic
 
 logger = logging.getLogger(__name__)
 
-# ── Bootstrap addresses ────────────────────────────────────────────────────────
+# Bootstrap addresses
 # Use 'kafka:9092'     when running inside Docker (container → container)
 # Use 'localhost:9094' when running listener.py directly on your host machine
 BOOTSTRAP_SERVERS_DOCKER = "kafka-1:9092,kafka-2:9092,kafka-3:9092"
@@ -27,7 +27,7 @@ TOPIC_NAME   = "raw_txns"
 NUM_PARTITIONS = 4
 
 
-# ── Topic creation (idempotent) ────────────────────────────────────────────────
+# Topic creation (idempotent)
 def ensure_topic(bootstrap: str = BOOTSTRAP_SERVERS_HOST) -> None:
     """
     Create the raw_txns topic if it does not already exist.
@@ -53,7 +53,7 @@ def ensure_topic(bootstrap: str = BOOTSTRAP_SERVERS_HOST) -> None:
                 logger.warning("[producer] Could not create topic '%s': %s", t, e)
 
 
-# ── Producer factory ───────────────────────────────────────────────────────────
+# Producer factory
 def create_producer(bootstrap: str = BOOTSTRAP_SERVERS_HOST) -> Producer:
     """
     Build and return a confluent_kafka.Producer.
@@ -91,7 +91,7 @@ def create_producer(bootstrap: str = BOOTSTRAP_SERVERS_HOST) -> Producer:
         return None
 
 
-# ── Delivery callback ──────────────────────────────────────────────────────────
+# Delivery callback
 def _on_delivery(err, msg):
     if err:
         logger.error(
@@ -105,7 +105,7 @@ def _on_delivery(err, msg):
         )
 
 
-# ── Main publish function ──────────────────────────────────────────────────────
+# Main publish function
 def produce_message(
     producer: Producer,
     topic: str,
@@ -138,7 +138,7 @@ def produce_message(
     producer.poll(0)
 
 
-# ── Graceful shutdown ──────────────────────────────────────────────────────────
+# Graceful shutdown
 def flush_producer(producer: Producer, timeout: float = 10.0) -> None:
     """
     Wait for all in-flight messages to be delivered.
@@ -156,7 +156,7 @@ def flush_producer(producer: Producer, timeout: float = 10.0) -> None:
         logger.info("[producer] All messages flushed successfully.")
 
 
-# ── Quick smoke-test ───────────────────────────────────────────────────────────
+# Quick smoke-test
 if __name__ == "__main__":
     import time
     logging.basicConfig(level=logging.INFO)
