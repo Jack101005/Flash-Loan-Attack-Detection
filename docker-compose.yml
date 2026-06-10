@@ -183,6 +183,25 @@ services:
     volumes:
       - spark_checkpoint:/tmp/spark_checkpoint
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: on-failure
+    ports:
+      - "8000:8000"
+    networks:
+      - broker_net
+    
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: on-failure
+    ports:
+      - "3000:3000"
+    networks:
+      - broker_net
 networks:
   broker_net:
 

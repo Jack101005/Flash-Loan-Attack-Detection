@@ -19,7 +19,6 @@ RUN pip install --no-cache-dir \
 
 # Copy application code
 COPY . .
-COPY storage/ /app/storage/
 
 # Expose port
 EXPOSE 8000
