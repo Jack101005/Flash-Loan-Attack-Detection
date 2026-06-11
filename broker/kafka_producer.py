@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Use 'kafka:9092'     when running inside Docker (container → container)
 # Use 'localhost:9094' when running listener.py directly on your host machine
 BOOTSTRAP_SERVERS_DOCKER = "kafka-1:9092,kafka-2:9092,kafka-3:9092"
-BOOTSTRAP_SERVERS_HOST   = "localhost:9094,localhost:9095,localhost:9096"
+BOOTSTRAP_SERVERS_HOST = "Thiens-MacBook-Pro.local:9094,Thiens-MacBook-Pro.local:9095,Thiens-MacBook-Pro.local:9096"
 
 TOPIC_NAME   = "raw_txns"
 NUM_PARTITIONS = 4
