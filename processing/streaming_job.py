@@ -43,7 +43,7 @@ MONGO_COLL      = "transactions"
 REDIS_HOST      = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT      = int(os.getenv("REDIS_PORT", 6379))
 REDIS_PASS      = os.getenv("REDIS_PASS", "")
-CHECKPOINT_DIR  = "/tmp/spark-checkpoints/flash-loan-detection"
+CHECKPOINT_DIR  = "/tmp/spark_checkpoints/flash-loan-detection"
 
 
 # Constants (broadcast to workers)
