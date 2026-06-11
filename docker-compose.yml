@@ -129,7 +129,7 @@ services:
       /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
       --host spark-master --port 7077 --webui-port 8080
     environment:
-      SPARK_MASTER_OPTS: "-Dspark.worker.timeout=15"
+      SPARK_MASTER_OPTS: "-Dspark.worker.timeout=15 -Dspark.deploy.recoveryMode=FILESYSTEM -Dspark.deploy.recoveryDirectory=/tmp/spark-recovery"
     ports:
       - "8080:8080"
     expose:
@@ -185,8 +185,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     restart: on-failure
     ports:
       - "8000:8000"
