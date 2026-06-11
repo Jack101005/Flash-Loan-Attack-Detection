@@ -56,8 +56,12 @@ cd Flash-Loan-Attack-Detection
 Create a `.env` file in the **root** of the project:
 
 ```env
-# Alchemy WebSocket URL (used by listener.py in production mode)
+# Alchemy HTTP URL (used by backend price lookups)
 ALCHEMY_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/<YOUR_API_KEY>
+
+# WebSocket RPC — primary provider (Alchemy) + passive failover
+ETH_WSS_PRIMARY=wss://eth-mainnet.g.alchemy.com/v2/<YOUR_API_KEY>
+ETH_WSS_FALLBACK=wss://ethereum-rpc.publicnode.com
 
 # Redis
 REDIS_HOST=localhost
@@ -110,7 +114,7 @@ python ingestion/mock_server.py
 
 Options:
 ```
---data ingestion/data/test_data_enriched.csv   # default dataset
+--data data/test_data_enriched.csv             # default dataset
 --delay 2.0                                    # seconds between each tx push
 --loop                                         # replay dataset forever
 ```
@@ -118,14 +122,25 @@ Options:
 **Terminal 2 — Listener** (subscribes to the mock node and publishes to Kafka):
 
 ```powershell
-python ingestion/listener.py
+python ingestion/listener.py                          # uses ETH_WSS_PRIMARY + ETH_WSS_FALLBACK from .env
+python ingestion/listener.py --url ws://localhost:8765  # mock server (development)
+python ingestion/listener.py --no-kafka               # print-only, no Docker needed
+```
+
+Options:
+```
+--url <wss://...>          Primary WebSocket RPC URL (overrides ETH_WSS_PRIMARY)
+--fallback-url <wss://...> Failover URL (overrides ETH_WSS_FALLBACK)
+--max-retries N            Max reconnection attempts before exit (default: 5)
+--no-kafka                 Disable Kafka — print detections only
 ```
 
 You should see logs like:
 ```
-[listener] Connected to ws://localhost:8765
-[listener] Subscribed to newPendingTransactions
-[listener] Published tx 0xabc123... to Kafka topic: raw_transactions
+[listener] RPC providers: 2 (primary=wss://eth-mainnet..., fallback=wss://ethereum-rpc...)
+[listener] Connected to wss://eth-mainnet.g.alchemy.com/v2/...
+[listener] Kafka: connected
+[listener] Listening for flash loans...
 ```
 
 ---
