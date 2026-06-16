@@ -330,7 +330,7 @@ def _write_kafka_failure(out_data: dict) -> None:
 
 # Reconnect wrapper with exponential backoff
 # ──────────────────────────────────────────────────────────────
-async def log_mempool(wss_url: str, max_retries: int = 5, use_kafka: bool = True):
+async def log_mempool(wss_urls, max_retries: int = 5, use_kafka: bool = True):
     """
     Run the listener with automatic reconnection on WebSocket drops.
 
