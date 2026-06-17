@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react";
 import { KpiCards } from "@/components/dashboard/KpiCards";
 import { LiveDetectionsTable } from "@/components/dashboard/LiveDetectionsTable";
-import { TransactionGraph } from "@/components/dashboard/TransactionGraph";
 import type { Detection } from "@/components/dashboard/LiveDetectionsTable";
 import { SSE_DETECTIONS_URL } from "@/lib/config";
 
@@ -43,13 +42,8 @@ export default function HomePage() {
     <>
       <KpiCards data={kpiData} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-6">
-        <div className="col-span-1 lg:col-span-3 relative">
-          <LiveDetectionsTable detections={detections} onSelect={setSelectedTx} />
-        </div>
-        <div className="col-span-1 lg:col-span-2">
-          <TransactionGraph transaction={selectedTx} />
-        </div>
+      <div className="mt-6 relative">
+        <LiveDetectionsTable detections={detections} onSelect={setSelectedTx} />
       </div>
     </>
   );
