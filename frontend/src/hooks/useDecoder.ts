@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { decodeTransaction } from '@/services/decoderService';
+import type { DecodeResponse } from '@/services/decoderService';
 
 export function useDecoder() {
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<DecodeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -16,8 +17,8 @@ export function useDecoder() {
     try {
       const data = await decodeTransaction(txHash);
       setResult(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to connect to backend API');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to connect to backend API');
     } finally {
       setLoading(false);
     }

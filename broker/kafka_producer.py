@@ -69,10 +69,15 @@ def create_producer(bootstrap: str = BOOTSTRAP_SERVERS_HOST) -> Producer:
     try:
         producer = Producer({
             "bootstrap.servers": bootstrap,
-            "acks": "all",             # wait for all in-sync replicas
-            "retries": 3,
+            # Exactly-once-ish guarantees against in-flight retries.
+            # Broker dedups by (PID, partition, seq) so a retried produce
+            # cannot land twice in the topic.
+            "enable.idempotence": True,
+            "acks": "all",
+            "retries": 2147483647,
+            "max.in.flight.requests.per.connection": 5,
             "retry.backoff.ms": 500,
-            "linger.ms": 5,            # small batch window for throughput
+            "linger.ms": 5,
             "compression.type": "lz4",
         })
         # Probe the broker — raises KafkaException if unreachable

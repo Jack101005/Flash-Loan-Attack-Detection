@@ -1,5 +1,7 @@
+import type { DecodeResponse } from "@/services/decoderService";
+
 interface DecodeResultProps {
-  result: any;
+  result: DecodeResponse | null;
   error: string;
 }
 

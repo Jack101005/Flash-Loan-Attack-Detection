@@ -20,6 +20,8 @@ export default {
         ring: "var(--ring)",
         background: "var(--background)",
         foreground: "var(--foreground)",
+        "neon-red": "#ef4444",
+        "acid-green": "#84cc16",
         primary: {
           DEFAULT: "var(--primary)",
           foreground: "var(--primary-foreground)",

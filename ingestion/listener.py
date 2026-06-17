@@ -48,6 +48,12 @@ try:
 except ImportError:
     _KAFKA_AVAILABLE = False
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+except ImportError:
+    pass
+
 from web3 import AsyncWeb3, WebSocketProvider
 from web3.exceptions import TransactionNotFound
 from config import WATCHLIST, SELECTORS
@@ -323,7 +329,8 @@ def _write_kafka_failure(out_data: dict) -> None:
 
 
 # Reconnect wrapper with exponential backoff
-async def log_mempool(wss_url: str, max_retries: int = 5, use_kafka: bool = True):
+# ──────────────────────────────────────────────────────────────
+async def log_mempool(wss_urls, max_retries: int = 5, use_kafka: bool = True):
     """
     Run the listener with automatic reconnection on WebSocket drops.
 
@@ -333,12 +340,22 @@ async def log_mempool(wss_url: str, max_retries: int = 5, use_kafka: bool = True
       - On successful reconnect: retry counter resets to 0
       - After max retries exhausted: alert and exit
 
-    Gap timestamps are logged so any missed transactions during
-    disconnection can be identified later.
+    Failover: ``wss_urls`` may be a single URL string or a list. When a
+    session fails before producing any transactions, the next attempt
+    advances to the next URL in the list. A session that successfully
+    received transactions keeps the URL for its next retry — we only
+    switch providers when the current one looks unhealthy.
     """
+    if isinstance(wss_urls, str):
+        wss_urls = [wss_urls]
+    wss_urls = [u for u in wss_urls if u]
+    if not wss_urls:
+        raise ValueError("log_mempool requires at least one WebSocket URL")
+
     stats = Stats()
     seen_hashes: set = set()
     retry_count = 0
+    url_idx = 0
     BASE_DELAY = 1.0
 
     # Kafka setup
@@ -352,9 +369,15 @@ async def log_mempool(wss_url: str, max_retries: int = 5, use_kafka: bool = True
     elif not _KAFKA_AVAILABLE:
         print("[listener] broker/kafka_producer.py not importable — print-only mode.")
 
+    print(f"[listener] RPC providers: {len(wss_urls)} "
+          f"(primary={wss_urls[0]}"
+          f"{', fallback=' + wss_urls[1] if len(wss_urls) > 1 else ''})")
+
     try:
         while True:
             prev_seen = stats.total_seen
+            wss_url = wss_urls[url_idx]
+            session_failed = False
 
             try:
                 await _run_session(wss_url, stats, seen_hashes, kafka_producer)
@@ -373,11 +396,12 @@ async def log_mempool(wss_url: str, max_retries: int = 5, use_kafka: bool = True
                 gap_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
                 print(f"\n[listener] Connection lost at {gap_time}: "
                       f"{type(e).__name__}: {e}")
+                session_failed = True
 
                 if stats.total_seen > prev_seen:
                     retry_count = 0
 
-            # Reconnect with exponential backoff
+            # --- Reconnect with exponential backoff ---
             retry_count += 1
             stats.reconnections += 1
 
@@ -412,8 +436,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Flash Loan Mempool Listener")
     parser.add_argument(
         "--url",
-        default="ws://localhost:8765",
-        help="WebSocket RPC URL (default: ws://localhost:8765 for mock server)",
+        default=None,
+        help="Primary WebSocket RPC URL. Defaults to $ETH_WSS_PRIMARY "
+             "from .env, or ws://localhost:8765 for the mock server.",
+    )
+    parser.add_argument(
+        "--fallback-url",
+        default=None,
+        help="Failover WebSocket RPC URL. Defaults to $ETH_WSS_FALLBACK from .env.",
     )
     parser.add_argument(
         "--max-retries",
@@ -428,7 +458,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    primary = args.url or os.getenv("ETH_WSS_PRIMARY") or "ws://localhost:8765"
+    fallback = args.fallback_url or os.getenv("ETH_WSS_FALLBACK") or ""
+    urls = [primary] + ([fallback] if fallback else [])
+
     try:
-        asyncio.run(log_mempool(args.url, args.max_retries, use_kafka=not args.no_kafka))
+        asyncio.run(log_mempool(urls, args.max_retries, use_kafka=not args.no_kafka))
     except KeyboardInterrupt:
         print("\n[listener] Stopped by user.")
