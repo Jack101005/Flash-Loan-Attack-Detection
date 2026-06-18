@@ -116,7 +116,7 @@ def get_recent_detections(limit: int = 50) -> list[dict]:
     cursor = (
         transactions_collection()
         .find({}, {"_id": 0})
-        .sort("detected_at", DESCENDING)
+        .sort("processed_at", DESCENDING)
         .limit(limit)
     )
     return list(cursor)

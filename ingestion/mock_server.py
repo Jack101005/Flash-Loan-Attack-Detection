@@ -39,7 +39,7 @@ except ImportError:
     print("Error: websockets not installed. Run: pip install websockets")
     sys.exit(1)
 
-
+csv.field_size_limit(2147483647)
 def load_transactions(csv_path: str) -> tuple[dict, dict]:
     """
     Load test_data_enriched.csv (or test_data.csv as fallback) into:
@@ -63,8 +63,8 @@ def load_transactions(csv_path: str) -> tuple[dict, dict]:
             block_number_raw = row.get("block_number", "").strip()
             block_ts_raw     = row.get("block_timestamp", "").strip()
 
-            block_number_int = int(block_number_raw) if block_number_raw else None
-            block_ts_int     = int(block_ts_raw)     if block_ts_raw     else None
+            block_number_int = int(block_number_raw, 0) if block_number_raw else None
+            block_ts_int     = int(block_ts_raw, 0)     if block_ts_raw     else None
             block_number_hex = hex(block_number_int) if block_number_int else None
 
             if block_number_int and block_ts_int:

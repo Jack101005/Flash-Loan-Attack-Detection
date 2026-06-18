@@ -138,7 +138,7 @@ async def stream_detections():
         first_poll = True
         while True:
             try:
-                docs = get_recent_detections(50)
+                docs = get_recent_detections(900)
                 detections = [
                     {
                         "tx_hash":       d.get("tx_hash", "0x000"),
