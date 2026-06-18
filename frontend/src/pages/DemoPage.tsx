@@ -13,6 +13,7 @@ import {
   Play, RotateCcw, ShieldAlert, Zap, Activity, Network, Cpu, Terminal,
   Plus, Minus, Database,
 } from "lucide-react";
+import PipelineSimulatorPage from "./PipelineSimulatorPage";
 
 // ── palette ──────────────────────────────────────────────────────────────────
 const BG    = "#0f1419";
@@ -29,6 +30,7 @@ const PURPLE = "#b08cf5";
 
 // ── sub-nav anchors ───────────────────────────────────────────────────────────
 const SECTIONS = [
+  { id: "pipeline-simulator",    label: "Pipeline Simulator" },
   { id: "concurrency",           label: "Concurrency" },
   { id: "message-passing",       label: "Message Passing" },
   { id: "fault-tolerance",       label: "Fault Tolerance" },
@@ -142,10 +144,11 @@ function ConcurrencyVisual() {
     svg.appendChild(txt(465, 57, "Spark Master", TEXT, 10));
 
     LANES.forEach((cy, i) => {
+      const tgtY = 136 + i * 16;
       svg.appendChild(box(400, cy - 14, 130, 28, fillFor(GREEN), GREEN, 5));
       svg.appendChild(txt(465, cy, `Spark Worker ${i + 1}`, TEXT, 9));
       svg.appendChild(el("line", { x1: 360, y1: cy, x2: 400, y2: cy, stroke: GOLD, "stroke-width": 2.5, "marker-end": "url(#demo-ar)" }));
-      svg.appendChild(el("line", { x1: 530, y1: cy, x2: 570, y2: 160, stroke: GOLD, "stroke-width": 2.5, "marker-end": "url(#demo-ar)" }));
+      svg.appendChild(el("line", { x1: 530, y1: cy, x2: 570, y2: tgtY, stroke: GOLD, "stroke-width": 2.5, "marker-end": "url(#demo-ar)" }));
     });
 
     svg.appendChild(box(570, 120, 110, 80, fillFor(PURPLE), PURPLE, 8));
@@ -173,9 +176,10 @@ function ConcurrencyVisual() {
 
     addDot(90, 179, 110, 179, "0s");
     LANES.forEach((cy, i) => {
+      const tgtY = 136 + i * 16;
       addDot(225, cy, 270, cy, `${i * 0.2}s`);
       addDot(360, cy, 400, cy, `${i * 0.2 + 0.5}s`);
-      addDot(530, cy, 570, 160, `${i * 0.2 + 1.0}s`);
+      addDot(530, cy, 570, tgtY, `${i * 0.2 + 1.0}s`);
     });
   }, []);
 
@@ -425,7 +429,7 @@ function FaultToleranceVisual() {
                 {!dead && (
                   <line
                     x1="440" y1={wy + 18}
-                    x2="558" y2="160"
+                    x2="558" y2={136 + i * 16}
                     stroke={GOLD} strokeWidth="2.5"
                     markerEnd="url(#ft-ar)"
                   />
@@ -449,7 +453,7 @@ function FaultToleranceVisual() {
                     <animateMotion
                       dur="1s"
                       repeatCount="indefinite"
-                      path={`M 440 ${wy + 18} L 558 160`}
+                      path={`M 440 ${wy + 18} L 558 ${136 + i * 16}`}
                       begin="0.5s"
                     />
                   </circle>
@@ -710,7 +714,7 @@ function LocationTransparencyVisual() {
         ))}
       </div>
       <div className="rounded-[10px] px-4 py-3 text-[12px]" style={{ background: "#0c1a0c", border: `1px solid ${GREEN}22`, fontFamily: "monospace", color: GREEN }}>
-        $ grep -r "[0-9]{1,3}\.[0-9]{1,3}" --include="*.py" .  →  zero matches
+        {'$ grep -r "[0-9]{1,3}\\.[0-9]{1,3}" --include="*.py" .  →  zero matches'}
       </div>
       <p className="text-[12px] leading-relaxed" style={{ color: MUT, fontFamily: "monospace" }}>
         Docker embedded DNS on <span style={{ color: TEXT }}>broker_net</span> resolves container names to IPs at runtime.
@@ -860,6 +864,13 @@ export default function DemoPage() {
           </button>
         ))}
       </nav>
+
+      {/* §0 Pipeline Simulator */}
+      <Card id="pipeline-simulator">
+        <div className="px-6 py-4">
+          <PipelineSimulatorPage />
+        </div>
+      </Card>
 
       {/* §1 Concurrency */}
       <Card id="concurrency">

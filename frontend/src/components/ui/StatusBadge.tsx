@@ -1,9 +1,17 @@
 // frontend/src/components/ui/StatusBadge.tsx
 // Status badge using the app's established color language.
 import { cn } from "@/lib/utils";
-import type { StageStatus } from "@/lib/pipeline";
-import { statusColor } from "@/lib/pipeline";
+export type StageStatus = "pending" | "processing" | "completed" | "failed";
 
+export function statusColor(status: StageStatus) {
+  const map: Record<StageStatus, any> = {
+    pending: { bg: "bg-white/5", text: "text-muted-foreground", border: "border-border", dot: "bg-muted-foreground/50", label: "Pending" },
+    processing: { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-400/50", dot: "bg-blue-400", label: "Processing" },
+    completed: { bg: "bg-acid-green/10", text: "text-acid-green", border: "border-acid-green/50", dot: "bg-acid-green", label: "Complete" },
+    failed: { bg: "bg-neon-red/10", text: "text-neon-red", border: "border-neon-red/50", dot: "bg-neon-red", label: "Failed" },
+  };
+  return map[status] || map.pending;
+}
 export function StatusBadge({
   status,
   pulse = false,

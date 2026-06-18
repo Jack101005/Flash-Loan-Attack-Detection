@@ -4,9 +4,8 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: Activity, end: true },
-  { to: "/pipeline-simulator", label: "Pipeline Simulator", icon: Network, end: false },
-  { to: "/decode", label: "Transaction Detail", icon: Terminal, end: false },
   { to: "/demo", label: "DS Demo", icon: LayoutDashboard, end: false },
+  { to: "/decode", label: "Transaction Detail", icon: Terminal, end: false },
 ];
 
 export function DashboardLayout() {

@@ -10,7 +10,6 @@ function App() {
     <Routes>
       <Route element={<DashboardLayout />}>
         <Route path="/" element={<HomePage />} />
-        <Route path="/pipeline-simulator" element={<PipelineSimulatorPage />} />
         <Route path="/decode" element={<DecodePage />} />
         <Route path="/demo" element={<DemoPage />} />
       </Route>
