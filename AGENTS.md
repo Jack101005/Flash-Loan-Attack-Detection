@@ -266,11 +266,6 @@ Flash-Loan-Attack-Detection/
 │                                       ETH_WSS_FALLBACK, REDIS_PASS,
 │                                       MONGODB_URI, MONGODB_FLASHLOAN_NAME
 ├── clear_mongo.py                   ← Dev util: wipe MongoDB transactions collection
-├── implementation_plan.md           ← Design doc: polling→SSE migration (Vietnamese)
-├── sse_implementation_report.md     ← Post-impl report: polling→SSE (Vietnamese)
-├── walkthrough.md                   ← Kafka/Spark scale-up session notes (Vietnamese)
-├── session-debug-price-valuation.md ← Debug session: Redis auth fix, price gap (English)
-├── spark-ui-walkthrough.md          ← Spark UI reference notes
 │
 ├── abis/                            ← Ethereum contract ABIs
 │   ├── aave_v3_pool.json            ← flashLoan (0xab9c4b5d) + flashLoanSimple (0x42b0b77c)
